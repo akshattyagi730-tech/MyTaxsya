@@ -3,8 +3,8 @@ import {
   Search, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   Inbox, AlertTriangle,
 } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { Input } from '@/Components/ui/input';
+import { Button } from '@/Components/ui/button';
 
 export default function DataTable({
   data = [], columns = [], loading = false, error = null,

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import apiClient from '@/api/apiClient';
-import PageHeader from '@/components/PageHeader';
+import PageHeader from '@/Components/PageHeader';
 import { Send, Bot, User } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/Components/ui/button';
+import { Input } from '@/Components/ui/input';
 
 export default function Assistant() {
   const [messages, setMessages] = useState([

@@ -1,5 +1,5 @@
-import EntityDetailPage from '@/components/EntityDetailPage';
-import StatusBadge from '@/components/StatusBadge';
+import EntityDetailPage from '@/Components/EntityDetailPage';
+import StatusBadge from '@/Components/StatusBadge';
 
 const fields = [
   { key: 'name', label: 'Name' },

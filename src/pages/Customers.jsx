@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import PageHeader from '@/components/PageHeader';
-import DataTable from '@/components/DataTable';
-import EntityFormDialog from '@/components/EntityFormDialog';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import StatusBadge from '@/components/StatusBadge';
+import PageHeader from '@/Components/PageHeader';
+import DataTable from '@/Components/DataTable';
+import EntityFormDialog from '@/Components/EntityFormDialog';
+import ConfirmDialog from '@/Components/ConfirmDialog';
+import StatusBadge from '@/Components/StatusBadge';
 import { useEntityCrud } from '@/hooks/useEntityCrud';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/Components/ui/button';
 import { formatINR } from '@/lib/format';
 
 const fields = [

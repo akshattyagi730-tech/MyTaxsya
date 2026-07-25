@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import apiClient from "@/api/apiClient";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/Components/ui/button";
+import { Input } from "@/Components/ui/input";
+import { Label } from "@/Components/ui/label";
 import { UserPlus, Mail, Lock, Loader2 } from "lucide-react";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import AuthLayout from "@/components/AuthLayout";
-import GoogleIcon from "@/components/GoogleIcon";
-import { toast } from "@/components/ui/use-toast";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/Components/ui/input-otp";
+import AuthLayout from "@/Components/AuthLayout";
+import GoogleIcon from "@/Components/GoogleIcon";
+import { toast } from "@/Components/ui/use-toast";
 import { useAuth } from "@/lib/AuthContext";
 import { translateAuthError } from "@/lib/auth-errors";
 
@@ -20,7 +20,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState("");
-  
+
   const { isAuthenticated, authChecked } = useAuth();
   const navigate = useNavigate();
 

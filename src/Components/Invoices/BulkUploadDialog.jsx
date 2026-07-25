@@ -1,11 +1,11 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '@/api/apiClient';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/Components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
-} from '@/components/ui/dialog';
-import { 
+} from '@/Components/ui/dialog';
+import {
   UploadCloud, Loader2, CheckCircle2, AlertCircle, Download, FileSpreadsheet, ArrowRight, Check, FileText, Database, Info, Edit3
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -125,11 +125,11 @@ const stringSimilarity = (s1, s2) => {
 const mapHeadersToSchema = (headers) => {
   const mapping = {};
   const confidences = [];
-  
+
   for (const [field, aliases] of Object.entries(SYNONYMS)) {
     let bestColumn = '';
     let bestScore = 0.0;
-    
+
     headers.forEach(column => {
       const colNorm = column.toLowerCase().replace(/[\s_-]/g, '');
       aliases.forEach(synonym => {
@@ -140,18 +140,18 @@ const mapHeadersToSchema = (headers) => {
         }
       });
     });
-    
+
     mapping[field] = bestColumn;
     confidences.push(bestScore);
   }
-  
+
   const averageConfidence = confidences.reduce((sum, val) => sum + val, 0) / confidences.length;
   return { mapping, confidence: averageConfidence };
 };
 
 const detectSpreadsheetType = (headers, data) => {
   const normalizedHeaders = headers.map(h => h.toLowerCase().replace(/[\s_-]/g, ''));
-  
+
   // 1. Customer List Check
   if (normalizedHeaders.some(h => ['email', 'phone', 'address'].includes(h)) && normalizedHeaders.some(h => ['customer', 'party', 'client', 'name'].includes(h))) {
     return "Customer List";
@@ -181,7 +181,7 @@ const detectSpreadsheetType = (headers, data) => {
     const isPurchase = normalizedHeaders.some(h => ['vendor', 'supplier'].includes(h));
     return isPurchase ? "Purchase Invoice" : "Sales Invoice";
   }
-  
+
   return "Unknown Document";
 };
 
@@ -199,11 +199,11 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
   const [statusType, setStatusType] = useState('info');
   const [updateExisting, setUpdateExisting] = useState(false);
   const [importSummary, setImportSummary] = useState(null);
-  
+
   // Workspace preview list of parsed files
   const [extractedDocs, setExtractedDocs] = useState([]);
   const [selectedDocIndex, setSelectedDocIndex] = useState(0);
-  
+
   const inputRef = useRef(null);
 
   const reset = () => {
@@ -228,10 +228,10 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
     setProcessing(true);
     setStatusType('info');
     setStatus('Loading file...');
-    
+
     try {
       const filesToProcess = [];
-      
+
       // ====================================================
       // 1. Process ZIP File
       // ====================================================
@@ -239,52 +239,52 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
         setStatus('Extracting ZIP archive in-memory...');
         const zip = new JSZip();
         const loadedZip = await zip.loadAsync(file);
-        
+
         for (const [filename, entry] of Object.entries(loadedZip.files)) {
           if (entry.dir) continue; // skip directories
-          
+
           const isText = filename.toLowerCase().match(/\.(csv)$/);
           const isExcel = filename.toLowerCase().match(/\.(xlsx|xls)$/);
           const isMedia = filename.toLowerCase().match(/\.(pdf|png|jpg|jpeg)$/);
-          
+
           if (!isText && !isExcel && !isMedia) continue; // skip other formats
-          
+
           let content;
           if (isMedia) {
             content = await entry.async('blob');
           } else {
             content = await entry.async('string');
           }
-          
-          const mimeType = isText ? 'text/csv' 
-            : isExcel ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-            : isMedia && filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' 
-            : 'image/jpeg';
-            
+
+          const mimeType = isText ? 'text/csv'
+            : isExcel ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+              : isMedia && filename.toLowerCase().endsWith('.pdf') ? 'application/pdf'
+                : 'image/jpeg';
+
           const extractedFile = new File([content], filename, { type: mimeType });
           filesToProcess.push(extractedFile);
         }
-        
+
         if (filesToProcess.length === 0) {
           throw new Error('No supported documents (CSV, Excel, PDF, PNG, JPG) found inside ZIP archive.');
         }
       } else {
         filesToProcess.push(file);
       }
-      
+
       // ====================================================
       // 2. Classify and Extract each file
       // ====================================================
       const docResults = [];
       let currentFileIdx = 0;
-      
+
       for (const item of filesToProcess) {
         currentFileIdx++;
         setStatus(`Analyzing file ${currentFileIdx} of ${filesToProcess.length}: ${item.name}...`);
-        
+
         const fileName = item.name;
         const fileNameLower = fileName.toLowerCase();
-        
+
         // CSV / Excel sheets
         if (fileNameLower.endsWith('.csv') || fileNameLower.endsWith('.xlsx') || fileNameLower.endsWith('.xls')) {
           let rawRows = [];
@@ -301,7 +301,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               rawRows.push(...rows);
             });
           }
-          
+
           if (rawRows.length === 0) {
             docResults.push({
               fileName: item.name,
@@ -314,7 +314,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             });
             continue;
           }
-          
+
           // Get unique headers
           const headers = [];
           const checkCount = Math.min(rawRows.length, 5);
@@ -323,20 +323,20 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             Object.keys(rawRows[i]).forEach(k => { if (!k.startsWith('_')) headerSet.add(k); });
           }
           headers.push(...headerSet);
-          
+
           // Classify document type
           const documentType = detectSpreadsheetType(headers, rawRows);
-          
+
           // Perform synonyms schema mapping
           const { mapping, confidence } = mapHeadersToSchema(headers);
-          
+
           // Map values
           const fields = {};
           const products = [];
           const rows = [];
-          
+
           const mappedTypeInfo = DOCUMENT_TYPES[documentType];
-          
+
           // If it's a statement or list, map rows
           if (["Customer List", "Supplier List", "Product List", "Bank Statement", "Ledger"].includes(documentType)) {
             rawRows.forEach(r => {
@@ -350,16 +350,16 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               const cust = mapping.customer_name ? String(r[mapping.customer_name] || '').trim() : '';
               const qty = Number(r[mapping.quantity]) || 1;
               const price = Number(r[mapping.unit_price]) || 0;
-              
+
               if (idx === 0) {
                 fields.invoice_number = invNo;
                 fields.invoice_date = date;
                 fields.customer = cust;
                 fields.supplier = cust;
               }
-              
+
               products.push({
-                description: invNo || `Item ${idx+1}`,
+                description: invNo || `Item ${idx + 1}`,
                 quantity: qty,
                 rate: price,
                 total: qty * price,
@@ -367,7 +367,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               });
             });
           }
-          
+
           docResults.push({
             fileName: item.name,
             documentType,
@@ -379,7 +379,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             headers,
             rawData: rawRows
           });
-          
+
         } else {
           // PDFs / Images
           const base64Data = await new Promise((resolve) => {
@@ -387,13 +387,13 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             reader.onload = () => resolve(reader.result.split(',')[1]);
             reader.readAsDataURL(item);
           });
-          
+
           const res = await apiClient.post('/assistant/extract-invoice', {
             fileData: base64Data,
             fileName: item.name,
             mimeType: item.type
           });
-          
+
           const data = res.data || {};
           docResults.push({
             fileName: item.name,
@@ -405,7 +405,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           });
         }
       }
-      
+
       setExtractedDocs(docResults);
       setSelectedDocIndex(0);
       setProcessing(false);
@@ -446,12 +446,12 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
   const handleImportAll = async () => {
     setProcessing(true);
     setStatusType('info');
-    
+
     let totalDocsCount = extractedDocs.length;
     let successDocsCount = 0;
     let failDocsCount = 0;
     const failedReport = [];
-    
+
     try {
       // Fetch existing invoices/customers/suppliers/products to map and skip duplicate calls
       setStatus('Connecting to database...');
@@ -461,12 +461,12 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
         apiClient.get('/entities/Supplier', { params: { limit: 100000 } }),
         apiClient.get('/entities/Product', { params: { limit: 100000 } })
       ]);
-      
+
       const dbInvoices = existingInvoicesRes.data || [];
       const dbCustomers = existingCustomersRes.data || [];
       const dbSuppliers = existingSuppliersRes.data || [];
       const dbProducts = existingProductsRes.data || [];
-      
+
       const customerMap = {};
       dbCustomers.forEach(c => { customerMap[c.name.toLowerCase()] = c.id || c._id; });
       const supplierMap = {};
@@ -475,15 +475,15 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
       dbProducts.forEach(p => { productMap[p.sku.toLowerCase()] = p.id || p._id; });
       const invoiceMap = {};
       dbInvoices.forEach(i => { if (i.invoice_number) invoiceMap[i.invoice_number.toLowerCase()] = i.id || i._id; });
-      
+
       let docIdx = 0;
       for (const doc of extractedDocs) {
         docIdx++;
         setStatus(`Importing document ${docIdx} of ${totalDocsCount}: ${doc.fileName}...`);
-        
+
         const docType = doc.documentType;
         const typeInfo = DOCUMENT_TYPES[docType] || DOCUMENT_TYPES["Unknown Document"];
-        
+
         if (!typeInfo.collection) {
           // Document recognized but no import workflow exists
           failedReport.push({
@@ -494,15 +494,15 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           failDocsCount++;
           continue;
         }
-        
+
         try {
           if (docType === "Sales Invoice" || docType === "GST Invoice") {
             const invoiceNumber = String(doc.fields.invoice_number || '').trim();
             const customerName = String(doc.fields.customer || doc.fields.business_name || 'General Customer').trim();
             const date = String(doc.fields.invoice_date || '').trim() || new Date().toISOString().split('T')[0];
-            
+
             if (!invoiceNumber) throw new Error('Missing invoice number.');
-            
+
             // Create customer if missing
             let customerId = customerMap[customerName.toLowerCase()];
             if (!customerId) {
@@ -510,9 +510,9 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               customerId = res.data.id || res.data._id;
               customerMap[customerName.toLowerCase()] = customerId;
             }
-            
+
             const total = doc.products.reduce((s, p) => s + (Number(p.total) || (Number(p.quantity) * Number(p.rate)) || 0), 0);
-            
+
             const record = {
               invoice_number: invoiceNumber,
               customer_id: customerId,
@@ -531,7 +531,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               ai_confidence: doc.confidence,
               ai_category: 'AI Imported'
             };
-            
+
             const existingId = invoiceMap[invoiceNumber.toLowerCase()];
             if (existingId) {
               if (updateExisting) {
@@ -543,15 +543,15 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               await apiClient.post('/entities/Invoice', record);
             }
             successDocsCount++;
-            
+
           } else if (docType === "Purchase Invoice" || docType === "Expense Receipt" || docType === "Vendor Bill") {
             const vendorName = String(doc.fields.supplier || doc.fields.business_name || 'Generic Vendor').trim();
             const date = String(doc.fields.invoice_date || '').trim() || new Date().toISOString().split('T')[0];
             const amount = doc.products.reduce((s, p) => s + (Number(p.total) || 0), 0) || Number(doc.fields.total) || 0;
-            const title = docType === "Purchase Invoice" 
-              ? `Purchase Invoice: ${doc.fields.invoice_number || 'N/A'}` 
+            const title = docType === "Purchase Invoice"
+              ? `Purchase Invoice: ${doc.fields.invoice_number || 'N/A'}`
               : `${docType}: ${vendorName}`;
-              
+
             const record = {
               title,
               category: docType === "Purchase Invoice" ? "raw_materials" : "office_supplies",
@@ -562,10 +562,10 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               notes: doc.fields.notes || `AI Extracted from ${doc.fileName}`,
               status: doc.fields.payment_status === "success" ? "approved" : "pending"
             };
-            
+
             await apiClient.post('/entities/Expense', record);
             successDocsCount++;
-            
+
           } else if (docType === "Customer List") {
             let added = 0;
             for (const row of doc.rows) {
@@ -582,7 +582,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               }
             }
             successDocsCount++;
-            
+
           } else if (docType === "Supplier List") {
             let added = 0;
             for (const row of doc.rows) {
@@ -599,7 +599,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               }
             }
             successDocsCount++;
-            
+
           } else if (docType === "Product List") {
             let added = 0;
             for (const row of doc.rows) {
@@ -619,7 +619,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               }
             }
             successDocsCount++;
-            
+
           } else if (docType === "Bank Statement") {
             let added = 0;
             for (const row of doc.rows) {
@@ -628,7 +628,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               const credit = Number(row.credit || row.Deposit || row.amount || 0);
               const debit = Number(row.debit || row.Withdrawal || 0);
               const amount = credit || debit;
-              
+
               if (amount > 0) {
                 await apiClient.post('/entities/Payment', {
                   payment_number: `PAY-${Date.now().toString().slice(-6)}-${added}`,
@@ -644,7 +644,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             }
             successDocsCount++;
           }
-          
+
         } catch (err) {
           failedReport.push({
             rowNumber: docIdx,
@@ -654,7 +654,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           failDocsCount++;
         }
       }
-      
+
       setImportSummary({
         totalRows: totalDocsCount,
         successCount: successDocsCount,
@@ -664,7 +664,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
       setStatusType(failDocsCount === totalDocsCount ? 'error' : 'success');
       setStatus('Import processing complete.');
       setProcessing(false);
-      
+
     } catch (err) {
       setStatusType('error');
       setStatus(err.message || 'Import failed.');
@@ -698,17 +698,14 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                 <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium uppercase tracking-wider">Success</p>
                 <p className="text-3xl font-extrabold mt-1 text-emerald-600 dark:text-emerald-400">{importSummary.successCount}</p>
               </div>
-              <div className={`p-4 rounded-xl text-center border ${
-                importSummary.failedCount > 0 
-                  ? 'bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30' 
+              <div className={`p-4 rounded-xl text-center border ${importSummary.failedCount > 0
+                  ? 'bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30'
                   : 'bg-muted/50 border-border'
-              }`}>
-                <p className={`text-xs font-medium uppercase tracking-wider ${
-                  importSummary.failedCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'
-                }`}>Failed/Skipped</p>
-                <p className={`text-3xl font-extrabold mt-1 ${
-                  importSummary.failedCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'
-                }`}>{importSummary.failedCount}</p>
+                }`}>
+                <p className={`text-xs font-medium uppercase tracking-wider ${importSummary.failedCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'
+                  }`}>Failed/Skipped</p>
+                <p className={`text-3xl font-extrabold mt-1 ${importSummary.failedCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'
+                  }`}>{importSummary.failedCount}</p>
               </div>
             </div>
 
@@ -718,16 +715,16 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                   <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                     <AlertCircle className="w-4 h-4 text-red-500" /> Failures / Warnings
                   </h4>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={downloadReport} 
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadReport}
                     className="h-8 gap-1.5 text-xs animate-pulse"
                   >
                     <Download className="w-3.5 h-3.5" /> Download Error Report
                   </Button>
                 </div>
-                
+
                 <div className="border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
                   <table className="w-full text-xs text-left border-collapse">
                     <thead className="bg-muted text-muted-foreground font-semibold sticky top-0 border-b border-border">
@@ -774,9 +771,9 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
     const showDestination = !!typeInfo.dest;
     const isImportable = !!typeInfo.collection;
     const confidenceColor = getConfidenceColor(selectedDoc.confidence);
-    
+
     // Check if nothing meaningful found
-    const hasNoData = !selectedDoc.documentType || selectedDoc.documentType === 'Unknown Document' || 
+    const hasNoData = !selectedDoc.documentType || selectedDoc.documentType === 'Unknown Document' ||
       (selectedDoc.products.length === 0 && selectedDoc.rows.length === 0 && Object.keys(selectedDoc.fields).length === 0);
 
     return (
@@ -801,27 +798,25 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                   <div
                     key={idx}
                     onClick={() => setSelectedDocIndex(idx)}
-                    className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
-                      idx === selectedDocIndex
+                    className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${idx === selectedDocIndex
                         ? 'bg-primary/5 border-primary text-primary font-semibold'
                         : 'border-border bg-background hover:bg-muted/30 text-foreground'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-start justify-between gap-1.5">
                       <p className="text-xs truncate font-mono flex-1">{doc.fileName}</p>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleRemoveDoc(idx);
-                        }} 
+                        }}
                         className="text-muted-foreground hover:text-red-500 font-bold text-xs"
                       >
                         ×
                       </button>
                     </div>
-                    <p className={`text-[10px] mt-1 font-medium px-2 py-0.5 rounded-full inline-block border ${
-                      doc.documentType === 'Unknown Document' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-muted text-muted-foreground border-border'
-                    }`}>
+                    <p className={`text-[10px] mt-1 font-medium px-2 py-0.5 rounded-full inline-block border ${doc.documentType === 'Unknown Document' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-muted text-muted-foreground border-border'
+                      }`}>
                       {doc.documentType}
                     </p>
                   </div>
@@ -876,9 +871,9 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                           This document is recognized but currently no import workflow exists.
                         </p>
                         {typeInfo.path && (
-                          <Button 
-                            variant="link" 
-                            size="sm" 
+                          <Button
+                            variant="link"
+                            size="sm"
                             onClick={() => {
                               navigate(typeInfo.path);
                               onClose();
@@ -1029,8 +1024,8 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
 
             <div className="flex gap-2">
               <Button variant="ghost" onClick={handleClose} disabled={processing}>Cancel</Button>
-              <Button 
-                onClick={handleImportAll} 
+              <Button
+                onClick={handleImportAll}
                 disabled={processing || !extractedDocs.some(d => !!DOCUMENT_TYPES[d.documentType]?.collection)}
                 className="gap-2"
               >
@@ -1090,14 +1085,13 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           )}
 
           {status && (
-            <div className={`flex items-start gap-2 text-sm p-3 rounded-lg ${
-              statusType === 'error' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400'
-              : statusType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
-              : 'bg-muted text-muted-foreground'
-            }`}>
+            <div className={`flex items-start gap-2 text-sm p-3 rounded-lg ${statusType === 'error' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400'
+                : statusType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
+                  : 'bg-muted text-muted-foreground'
+              }`}>
               {statusType === 'error' ? <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 : statusType === 'success' ? <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                : <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />}
+                  : <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />}
               <span>{status}</span>
             </div>
           )}

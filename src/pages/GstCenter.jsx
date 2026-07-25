@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import apiClient from '@/api/apiClient';
-import PageHeader from '@/components/PageHeader';
-import StatCard from '@/components/dashboard/StatCard';
+import PageHeader from '@/Components/PageHeader';
+import StatCard from '@/Components/dashboard/StatCard';
 import { Landmark, TrendingUp, TrendingDown, Wallet, Download, FileJson } from 'lucide-react';
 import { formatINR } from '@/lib/format';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
+import { Button } from '@/Components/ui/button';
 
 export default function GstCenter() {
   const [invoices, setInvoices] = useState([]);

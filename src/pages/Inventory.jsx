@@ -1,17 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
 import apiClient from '@/api/apiClient';
-import PageHeader from '@/components/PageHeader';
-import DataTable from '@/components/DataTable';
-import StatCard from '@/components/dashboard/StatCard';
-import { Button } from '@/components/ui/button';
+import PageHeader from '@/Components/PageHeader';
+import DataTable from '@/Components/DataTable';
+import StatCard from '@/Components/dashboard/StatCard';
+import { Button } from '@/Components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@/Components/ui/dialog';
+import { Input } from '@/Components/ui/input';
+import { Label } from '@/Components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+} from '@/Components/ui/select';
 import { Package, AlertTriangle, PackageX, TrendingUp } from 'lucide-react';
 import { formatINR } from '@/lib/format';
 
@@ -68,11 +68,13 @@ export default function Inventory() {
     { key: 'name', label: 'Product', sortable: true },
     { key: 'sku', label: 'SKU', sortable: true },
     { key: 'category', label: 'Category', sortable: true },
-    { key: 'stock_quantity', label: 'In Stock', sortable: true, render: (r) => (
-      <span className={r.stock_quantity <= 0 ? 'text-red-600 font-medium' : r.stock_quantity <= (r.low_stock_threshold || 0) ? 'text-amber-600 font-medium' : ''}>
-        {r.stock_quantity} {r.unit}
-      </span>
-    ) },
+    {
+      key: 'stock_quantity', label: 'In Stock', sortable: true, render: (r) => (
+        <span className={r.stock_quantity <= 0 ? 'text-red-600 font-medium' : r.stock_quantity <= (r.low_stock_threshold || 0) ? 'text-amber-600 font-medium' : ''}>
+          {r.stock_quantity} {r.unit}
+        </span>
+      )
+    },
     { key: 'low_stock_threshold', label: 'Min Level' },
     { key: 'purchase_price', label: 'Unit Cost', render: (r) => formatINR(r.purchase_price) },
     { key: 'stock_value', label: 'Stock Value', render: (r) => <span className="font-medium">{formatINR(r.stock_quantity * r.purchase_price)}</span> },

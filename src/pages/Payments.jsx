@@ -1,18 +1,18 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import PageHeader from '@/components/PageHeader';
-import DataTable from '@/components/DataTable';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import StatusBadge from '@/components/StatusBadge';
+import PageHeader from '@/Components/PageHeader';
+import DataTable from '@/Components/DataTable';
+import ConfirmDialog from '@/Components/ConfirmDialog';
+import StatusBadge from '@/Components/StatusBadge';
 import { useEntityCrud } from '@/hooks/useEntityCrud';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/Components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@/Components/ui/dialog';
+import { Input } from '@/Components/ui/input';
+import { Label } from '@/Components/ui/label';
 import apiClient from '@/api/apiClient';
 import { formatINR, formatDate } from '@/lib/format';
 
@@ -35,7 +35,7 @@ export default function Payments() {
 
   const [customers, setCustomers] = useState([]);
   const [unpaidInvoices, setUnpaidInvoices] = useState([]);
-  
+
   const [formState, setFormState] = useState({
     payment_number: '',
     customer_id: '',
@@ -300,10 +300,10 @@ export default function Payments() {
         </DialogContent>
       </Dialog>
 
-    <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)}
-      onConfirm={async () => { await remove(deleteItem.id); setDeleteItem(null); }}
-      loading={deleting} title="Delete Payment"
-      description={`Are you sure you want to delete ${deleteItem?.payment_number}? This will revert any associated invoice balance updates.`} />
-  </div>
+      <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)}
+        onConfirm={async () => { await remove(deleteItem.id); setDeleteItem(null); }}
+        loading={deleting} title="Delete Payment"
+        description={`Are you sure you want to delete ${deleteItem?.payment_number}? This will revert any associated invoice balance updates.`} />
+    </div>
   );
 }

@@ -11,9 +11,9 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import StatCard from '@/components/dashboard/StatCard';
+import StatCard from '@/Components/dashboard/StatCard';
 import { formatINR, formatINRCompact, formatDate } from '@/lib/format';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/Components/ui/button';
 
 const statusStyles = {
   draft: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
@@ -150,7 +150,7 @@ export default function Dashboard() {
     const thisM = now.getMonth(), thisY = now.getFullYear();
     const prevD = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const prevM = prevD.getMonth(), prevY = prevD.getFullYear();
-    
+
     const inMonth = (dateStr, m, y) => {
       const d = new Date(dateStr);
       return d.getMonth() === m && d.getFullYear() === y;
@@ -161,7 +161,7 @@ export default function Dashboard() {
 
     const currentSales = getSales(thisM, thisY);
     const previousSales = getSales(prevM, prevY);
-    
+
     const currentExp = getExpenses(thisM, thisY);
     const previousExp = getExpenses(prevM, prevY);
 
@@ -389,11 +389,10 @@ export default function Dashboard() {
                       <td className="px-5 py-3 text-sm text-muted-foreground">{formatDate(tx.date)}</td>
                       <td className="px-5 py-3 text-sm font-medium">{tx.desc}</td>
                       <td className="px-5 py-3 text-sm text-center capitalize">
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                          tx.type === 'sales' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/20' :
-                          tx.type === 'payment' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20' :
-                          'bg-rose-50 text-rose-700 dark:bg-rose-950/20'
-                        }`}>
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${tx.type === 'sales' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/20' :
+                            tx.type === 'payment' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20' :
+                              'bg-rose-50 text-rose-700 dark:bg-rose-950/20'
+                          }`}>
                           {tx.type}
                         </span>
                       </td>

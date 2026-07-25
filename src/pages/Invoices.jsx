@@ -1,19 +1,19 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, UploadCloud, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import PageHeader from '@/components/PageHeader';
-import DataTable from '@/components/DataTable';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import StatusBadge from '@/components/StatusBadge';
-import InvoiceForm from '@/components/invoices/InvoiceForm';
-import BulkUploadDialog from '@/components/invoices/BulkUploadDialog';
+import PageHeader from '@/Components/PageHeader';
+import DataTable from '@/Components/DataTable';
+import ConfirmDialog from '@/Components/ConfirmDialog';
+import StatusBadge from '@/Components/StatusBadge';
+import InvoiceForm from '@/Components/invoices/InvoiceForm';
+import BulkUploadDialog from '@/Components/invoices/BulkUploadDialog';
 import { useEntityCrud } from '@/hooks/useEntityCrud';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/Components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select';
 import { formatINR, formatDate } from '@/lib/format';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { toast } from '@/components/ui/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/Components/ui/dialog';
+import { Input } from '@/Components/ui/input';
+import { toast } from '@/Components/ui/use-toast';
 import { invoiceService } from '@/services/invoiceService';
 
 const columns = [
@@ -22,23 +22,25 @@ const columns = [
   { key: 'invoice_date', label: 'Date', sortable: true, render: (r) => formatDate(r.invoice_date) },
   { key: 'total', label: 'Amount', sortable: true, render: (r) => <span className="font-medium">{formatINR(r.total)}</span> },
   { key: 'balance_due', label: 'Balance', render: (r) => formatINR(r.balance_due) },
-  { key: 'ai_confidence', label: 'AI Review', render: (r) => {
-    if (r.ai_confidence == null) return <span className="text-xs text-muted-foreground">—</span>;
-    if (r.ai_confidence < 0.8) {
+  {
+    key: 'ai_confidence', label: 'AI Review', render: (r) => {
+      if (r.ai_confidence == null) return <span className="text-xs text-muted-foreground">—</span>;
+      if (r.ai_confidence < 0.8) {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-300 dark:border-amber-800 whitespace-nowrap">
+            <AlertTriangle className="w-3 h-3" />
+            Score: {r.ai_confidence.toFixed(2)} - Needs Review
+          </span>
+        );
+      }
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-300 dark:border-amber-800 whitespace-nowrap">
-          <AlertTriangle className="w-3 h-3" />
-          Score: {r.ai_confidence.toFixed(2)} - Needs Review
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
+          <CheckCircle2 className="w-3 h-3" />
+          {r.ai_confidence.toFixed(2)}
         </span>
       );
     }
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
-        <CheckCircle2 className="w-3 h-3" />
-        {r.ai_confidence.toFixed(2)}
-      </span>
-    );
-  } },
+  },
   { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
 ];
 

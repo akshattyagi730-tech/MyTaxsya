@@ -1,7 +1,7 @@
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from '@/Components/ui/alert-dialog';
 
 export default function ConfirmDialog({
   open, onClose, onConfirm, title = 'Are you sure?',

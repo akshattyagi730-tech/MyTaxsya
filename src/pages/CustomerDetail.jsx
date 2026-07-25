@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Pencil, Trash2, Mail, Phone, MapPin, FileText } from 'lucide-react';
 import apiClient from '@/api/apiClient';
-import { Button } from '@/components/ui/button';
-import StatusBadge from '@/components/StatusBadge';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import EntityFormDialog from '@/components/EntityFormDialog';
+import { Button } from '@/Components/ui/button';
+import StatusBadge from '@/Components/StatusBadge';
+import ConfirmDialog from '@/Components/ConfirmDialog';
+import EntityFormDialog from '@/Components/EntityFormDialog';
 import { formatINR, formatDate } from '@/lib/format';
 
 const fields = [

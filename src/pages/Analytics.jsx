@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import apiClient from '@/api/apiClient';
-import PageHeader from '@/components/PageHeader';
+import PageHeader from '@/Components/PageHeader';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
 import { formatINR, formatINRCompact } from '@/lib/format';
 
 export default function Analytics() {

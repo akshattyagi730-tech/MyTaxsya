@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import apiClient from '@/api/apiClient';
-import PageHeader from '@/components/PageHeader';
-import DataTable from '@/components/DataTable';
+import PageHeader from '@/Components/PageHeader';
+import DataTable from '@/Components/DataTable';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+} from '@/Components/ui/select';
 import { formatINR, formatDate } from '@/lib/format';
 
 export default function Ledger() {

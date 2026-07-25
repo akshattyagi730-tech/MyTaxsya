@@ -1,15 +1,15 @@
 import { useEffect, useState, useMemo } from 'react';
 import apiClient from '@/api/apiClient';
-import PageHeader from '@/components/PageHeader';
-import StatCard from '@/components/dashboard/StatCard';
+import PageHeader from '@/Components/PageHeader';
+import StatCard from '@/Components/dashboard/StatCard';
 import { jsPDF } from 'jspdf';
 import {
   TrendingUp, TrendingDown, Wallet, FileText, Download,
   BarChart3, Receipt, Users, Truck, Boxes, Landmark, RefreshCw
 } from 'lucide-react';
 import { formatINR, formatDate } from '@/lib/format';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
+import { Button } from '@/Components/ui/button';
 
 export default function Reports() {
   const [data, setData] = useState({
@@ -76,7 +76,7 @@ export default function Reports() {
     const salesTotal = invoices.filter(i => i.status !== 'cancelled' && i.status !== 'draft').reduce((s, i) => s + (i.subtotal || 0), 0);
     const purchaseCost = expenses.filter(e => e.category === 'raw_materials').reduce((s, e) => s + (e.amount - e.gst_amount || 0), 0);
     const grossProfit = salesTotal - purchaseCost;
-    
+
     // Operating expenses categories
     const categories = ["rent", "salaries", "utilities", "marketing", "travel", "office_supplies", "software", "professional_fees", "logistics", "other"];
     const opExpensesList = categories.map(cat => {
@@ -293,28 +293,28 @@ export default function Reports() {
 
     const titleName = reportTabs.find(t => t.id === activeReport)?.label || 'Business Report';
     const doc = new jsPDF();
-    
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
     doc.text(titleName, 14, 20);
-    
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.text(`Generated on: ${new Date().toLocaleDateString('en-IN')}`, 14, 28);
-    
+
     let y = 38;
     doc.setFont("helvetica", "bold");
     let x = 14;
     const colWidth = 180 / activeData.headers.length;
-    
+
     activeData.headers.forEach((h, idx) => {
       doc.text(h, x + (idx * colWidth), y);
     });
-    
+
     y += 4;
     doc.line(14, y, 194, y);
     y += 6;
-    
+
     doc.setFont("helvetica", "normal");
     activeData.rows.forEach(row => {
       if (y > 270) {
@@ -329,14 +329,14 @@ export default function Reports() {
         y += 6;
         doc.setFont("helvetica", "normal");
       }
-      
+
       row.forEach((val, idx) => {
         const text = String(val !== undefined && val !== null ? val : '—').slice(0, Math.floor(colWidth / 2.2));
         doc.text(text, x + (idx * colWidth), y);
       });
       y += 7;
     });
-    
+
     doc.save(`${activeReport}_report_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
@@ -364,11 +364,10 @@ export default function Reports() {
               <button
                 key={tab.id}
                 onClick={() => setActiveReport(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                  isActive
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${isActive
                     ? 'bg-primary text-primary-foreground shadow'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
+                  }`}
               >
                 <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>
@@ -413,18 +412,15 @@ export default function Reports() {
                         return (
                           <tr
                             key={rowIdx}
-                            className={`border-b border-border last:border-0 hover:bg-muted/30 transition-colors ${
-                              isTotalRow ? 'bg-muted/20 font-bold text-foreground border-t border-border' : ''
-                            }`}
+                            className={`border-b border-border last:border-0 hover:bg-muted/30 transition-colors ${isTotalRow ? 'bg-muted/20 font-bold text-foreground border-t border-border' : ''
+                              }`}
                           >
                             {row.map((val, cellIdx) => (
                               <td
                                 key={cellIdx}
-                                className={`px-5 py-3.5 ${
-                                  cellIdx === 0 ? 'text-left font-medium' : 'text-right'
-                                } ${
-                                  val?.includes('-') && cellIdx > 0 ? 'text-rose-600' : ''
-                                }`}
+                                className={`px-5 py-3.5 ${cellIdx === 0 ? 'text-left font-medium' : 'text-right'
+                                  } ${val?.includes('-') && cellIdx > 0 ? 'text-rose-600' : ''
+                                  }`}
                               >
                                 {val}
                               </td>

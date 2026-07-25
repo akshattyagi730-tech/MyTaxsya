@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import apiClient from "@/api/apiClient";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/Components/ui/button";
+import { Input } from "@/Components/ui/input";
+import { Label } from "@/Components/ui/label";
 import { Lock, Loader2, AlertTriangle } from "lucide-react";
-import AuthLayout from "@/components/AuthLayout";
+import AuthLayout from "@/Components/AuthLayout";
 import { useAuth } from "@/lib/AuthContext";
 import { translateAuthError } from "@/lib/auth-errors";
 
@@ -17,7 +17,7 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  
+
   const { isAuthenticated, authChecked } = useAuth();
   const navigate = useNavigate();
 

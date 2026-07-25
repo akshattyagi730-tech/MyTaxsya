@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Pencil, Trash2, Printer, Download } from 'lucide-react';
 import apiClient from '@/api/apiClient';
-import { Button } from '@/components/ui/button';
-import StatusBadge from '@/components/StatusBadge';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import InvoiceForm from '@/components/invoices/InvoiceForm';
+import { Button } from '@/Components/ui/button';
+import StatusBadge from '@/Components/StatusBadge';
+import ConfirmDialog from '@/Components/ConfirmDialog';
+import InvoiceForm from '@/Components/invoices/InvoiceForm';
 import { formatINR, formatDate } from '@/lib/format';
 import { jsPDF } from 'jspdf';
 
@@ -35,28 +35,28 @@ export default function InvoiceDetail() {
   const handleDownloadPDF = () => {
     if (!invoice) return;
     const doc = new jsPDF();
-    
+
     // Header - Title
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
     doc.text("TAX INVOICE", 14, 25);
-    
+
     // Line under title
     doc.setDrawColor(200, 200, 200);
     doc.line(14, 28, 196, 28);
-    
+
     // Invoice details
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.text("Invoice Number:", 120, 36);
     doc.setFont("helvetica", "normal");
     doc.text(invoice.invoice_number, 160, 36);
-    
+
     doc.setFont("helvetica", "bold");
     doc.text("Invoice Date:", 120, 42);
     doc.setFont("helvetica", "normal");
     doc.text(formatDate(invoice.invoice_date), 160, 42);
-    
+
     doc.setFont("helvetica", "bold");
     doc.text("Due Date:", 120, 48);
     doc.setFont("helvetica", "normal");
@@ -66,7 +66,7 @@ export default function InvoiceDetail() {
     doc.text("Payment Status:", 120, 54);
     doc.setFont("helvetica", "bold");
     doc.text(invoice.status.toUpperCase(), 160, 54);
-    
+
     // Customer details
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
@@ -86,11 +86,11 @@ export default function InvoiceDetail() {
     doc.text("Rate", 125, y);
     doc.text("GST %", 150, y);
     doc.text("Amount", 175, y);
-    
+
     y += 4;
     doc.line(14, y, 196, y);
     y += 6;
-    
+
     // Line items list
     doc.setFont("helvetica", "normal");
     invoice.items?.forEach(item => {
@@ -108,7 +108,7 @@ export default function InvoiceDetail() {
         y += 6;
         doc.setFont("helvetica", "normal");
       }
-      
+
       doc.text(String(item.description || '—'), 14, y);
       doc.text(String(item.quantity || 0), 100, y);
       doc.text(formatINR(item.rate), 125, y);
@@ -116,19 +116,19 @@ export default function InvoiceDetail() {
       doc.text(formatINR(item.quantity * item.rate), 175, y);
       y += 7;
     });
-    
+
     y += 2;
     doc.line(14, y, 196, y);
     y += 8;
-    
+
     // Totals breakdown
     const labelX = 120;
     const valueX = 175;
-    
+
     doc.text("Subtotal:", labelX, y);
     doc.text(formatINR(invoice.subtotal), valueX, y);
     y += 6;
-    
+
     if (invoice.cgst > 0) {
       doc.text("CGST:", labelX, y);
       doc.text(formatINR(invoice.cgst), valueX, y);
@@ -144,7 +144,7 @@ export default function InvoiceDetail() {
       doc.text(formatINR(invoice.igst), valueX, y);
       y += 6;
     }
-    
+
     doc.setFont("helvetica", "bold");
     doc.text("Grand Total:", labelX, y);
     doc.text(formatINR(invoice.total), valueX, y);
@@ -154,7 +154,7 @@ export default function InvoiceDetail() {
     y += 6;
     doc.text("Balance Due:", labelX, y);
     doc.text(formatINR(invoice.balance_due), valueX, y);
-    
+
     // Notes
     if (invoice.notes) {
       y += 15;
@@ -164,7 +164,7 @@ export default function InvoiceDetail() {
       doc.setFont("helvetica", "normal");
       doc.text(invoice.notes, 14, y);
     }
-    
+
     doc.save(`invoice_${invoice.invoice_number}.pdf`);
   };
 

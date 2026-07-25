@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import apiClient from '@/api/apiClient';
-import PageHeader from '@/components/PageHeader';
-import { Button } from '@/components/ui/button';
+import PageHeader from '@/Components/PageHeader';
+import { Button } from '@/Components/ui/button';
 import { Bell, CheckCheck, Trash2, Info, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { formatDate } from '@/lib/format';
 

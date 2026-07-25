@@ -1,5 +1,5 @@
-import EntityDetailPage from '@/components/EntityDetailPage';
-import StatusBadge from '@/components/StatusBadge';
+import EntityDetailPage from '@/Components/EntityDetailPage';
+import StatusBadge from '@/Components/StatusBadge';
 
 const fields = [
   { key: 'title', label: 'Title' },
@@ -15,26 +15,32 @@ const fields = [
 
 const formFields = [
   { key: 'title', label: 'Title', required: true },
-  { key: 'category', label: 'Category', type: 'select', options: [
-    { value: 'rent', label: 'Rent' }, { value: 'salaries', label: 'Salaries' },
-    { value: 'utilities', label: 'Utilities' }, { value: 'marketing', label: 'Marketing' },
-    { value: 'travel', label: 'Travel' }, { value: 'office_supplies', label: 'Office Supplies' },
-    { value: 'software', label: 'Software' }, { value: 'professional_fees', label: 'Professional Fees' },
-    { value: 'raw_materials', label: 'Raw Materials' }, { value: 'logistics', label: 'Logistics' },
-    { value: 'other', label: 'Other' },
-  ] },
+  {
+    key: 'category', label: 'Category', type: 'select', options: [
+      { value: 'rent', label: 'Rent' }, { value: 'salaries', label: 'Salaries' },
+      { value: 'utilities', label: 'Utilities' }, { value: 'marketing', label: 'Marketing' },
+      { value: 'travel', label: 'Travel' }, { value: 'office_supplies', label: 'Office Supplies' },
+      { value: 'software', label: 'Software' }, { value: 'professional_fees', label: 'Professional Fees' },
+      { value: 'raw_materials', label: 'Raw Materials' }, { value: 'logistics', label: 'Logistics' },
+      { value: 'other', label: 'Other' },
+    ]
+  },
   { key: 'amount', label: 'Amount', type: 'number', required: true },
-  { key: 'payment_mode', label: 'Payment Mode', type: 'select', options: [
-    { value: 'cash', label: 'Cash' }, { value: 'upi', label: 'UPI' },
-    { value: 'bank', label: 'Bank Transfer' }, { value: 'card', label: 'Card' },
-    { value: 'cheque', label: 'Cheque' },
-  ] },
+  {
+    key: 'payment_mode', label: 'Payment Mode', type: 'select', options: [
+      { value: 'cash', label: 'Cash' }, { value: 'upi', label: 'UPI' },
+      { value: 'bank', label: 'Bank Transfer' }, { value: 'card', label: 'Card' },
+      { value: 'cheque', label: 'Cheque' },
+    ]
+  },
   { key: 'date', label: 'Date', type: 'date', required: true },
   { key: 'vendor', label: 'Vendor' },
   { key: 'gst_amount', label: 'GST Amount', type: 'number' },
-  { key: 'status', label: 'Status', type: 'select', options: [
-    { value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' }, { value: 'rejected', label: 'Rejected' },
-  ] },
+  {
+    key: 'status', label: 'Status', type: 'select', options: [
+      { value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' }, { value: 'rejected', label: 'Rejected' },
+    ]
+  },
   { key: 'notes', label: 'Notes' },
 ];
 

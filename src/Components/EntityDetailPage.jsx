@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import apiClient from '@/api/apiClient';
-import { Button } from '@/components/ui/button';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import EntityFormDialog from '@/components/EntityFormDialog';
+import { Button } from '@/Components/ui/button';
+import ConfirmDialog from '@/Components/ConfirmDialog';
+import EntityFormDialog from '@/Components/EntityFormDialog';
 import { formatINR, formatDate } from '@/lib/format';
 
 export default function EntityDetailPage({ entityName, titleKey, fields, formFields, backPath, children = null }) {
@@ -82,8 +82,8 @@ export default function EntityDetailPage({ entityName, titleKey, fields, formFie
               <span className="text-sm font-medium text-right">
                 {field.render ? field.render(item)
                   : field.type === 'currency' ? formatINR(item[field.key])
-                  : field.type === 'date' ? formatDate(item[field.key])
-                  : item[field.key] || '—'}
+                    : field.type === 'date' ? formatDate(item[field.key])
+                      : item[field.key] || '—'}
               </span>
             </div>
           ))}

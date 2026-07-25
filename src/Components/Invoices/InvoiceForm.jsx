@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@/Components/ui/dialog';
+import { Button } from '@/Components/ui/button';
+import { Input } from '@/Components/ui/input';
+import { Label } from '@/Components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+} from '@/Components/ui/select';
 import { Plus, Trash2 } from 'lucide-react';
 import apiClient from '@/api/apiClient';
 import { formatINR } from '@/lib/format';
@@ -16,7 +16,7 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [business, setBusiness] = useState(null);
-  
+
   const [formData, setFormData] = useState({
     invoice_number: `INV-${Date.now().toString().slice(-6)}`,
     customer_id: '',
@@ -42,12 +42,12 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
         notes: invoice.notes || '',
         items: invoice.items?.length
           ? invoice.items.map(item => ({
-              product_id: item.product_id || '',
-              description: item.description || '',
-              quantity: Number(item.quantity) || 0,
-              rate: Number(item.rate) || 0,
-              gst_rate: Number(item.gst_rate) || 0,
-            }))
+            product_id: item.product_id || '',
+            description: item.description || '',
+            quantity: Number(item.quantity) || 0,
+            rate: Number(item.rate) || 0,
+            gst_rate: Number(item.gst_rate) || 0,
+          }))
           : [{ product_id: '', description: '', quantity: 1, rate: 0, gst_rate: 18 }],
       });
     } else {
@@ -96,12 +96,12 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
 
   const subtotal = formData.items.reduce((s, item) => s + (item.quantity * item.rate), 0);
   const totalGst = formData.items.reduce((s, item) => s + (item.quantity * item.rate * item.gst_rate / 100), 0);
-  
+
   // Tax determination (CGST + SGST vs IGST)
   const cgst = isInterstate ? 0 : totalGst / 2;
   const sgst = isInterstate ? 0 : totalGst / 2;
   const igst = isInterstate ? totalGst : 0;
-  
+
   const rawTotal = subtotal + totalGst;
   const total = Math.round(rawTotal);
   const roundOff = Number((total - rawTotal).toFixed(2));

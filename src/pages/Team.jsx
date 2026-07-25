@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import apiClient from '@/api/apiClient';
-import PageHeader from '@/components/PageHeader';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import PageHeader from '@/Components/PageHeader';
+import { Button } from '@/Components/ui/button';
+import { Input } from '@/Components/ui/input';
+import { Label } from '@/Components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+} from '@/Components/ui/select';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+} from '@/Components/ui/dialog';
+import { Avatar, AvatarFallback } from '@/Components/ui/avatar';
 import { UserPlus, ShieldAlert } from 'lucide-react';
 import { formatDate } from '@/lib/format';
 

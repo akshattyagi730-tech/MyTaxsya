@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import PageHeader from '@/components/PageHeader';
-import DataTable from '@/components/DataTable';
-import EntityFormDialog from '@/components/EntityFormDialog';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import StatusBadge from '@/components/StatusBadge';
+import PageHeader from '@/Components/PageHeader';
+import DataTable from '@/Components/DataTable';
+import EntityFormDialog from '@/Components/EntityFormDialog';
+import ConfirmDialog from '@/Components/ConfirmDialog';
+import StatusBadge from '@/Components/StatusBadge';
 import { useEntityCrud } from '@/hooks/useEntityCrud';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/Components/ui/button';
 import { formatINR } from '@/lib/format';
 
 const fields = [
@@ -31,9 +31,11 @@ const columns = [
   { key: 'sku', label: 'SKU', sortable: true },
   { key: 'category', label: 'Category', sortable: true },
   { key: 'selling_price', label: 'Price', sortable: true, render: (r) => formatINR(r.selling_price) },
-  { key: 'stock_quantity', label: 'Stock', sortable: true, render: (r) => (
-    <span className={r.stock_quantity <= (r.low_stock_threshold || 0) ? 'text-red-600 font-medium' : ''}>{r.stock_quantity} {r.unit}</span>
-  ) },
+  {
+    key: 'stock_quantity', label: 'Stock', sortable: true, render: (r) => (
+      <span className={r.stock_quantity <= (r.low_stock_threshold || 0) ? 'text-red-600 font-medium' : ''}>{r.stock_quantity} {r.unit}</span>
+    )
+  },
   { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
 ];
 

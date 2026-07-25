@@ -3,13 +3,13 @@ import {
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { useAuth } from '@/lib/AuthContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/Components/ui/button';
+import { Input } from '@/Components/ui/input';
+import { Avatar, AvatarFallback } from '@/Components/ui/avatar';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@/Components/ui/dropdown-menu';
 
 export default function Header({ onMenuClick }) {
   const { theme, toggleTheme } = useTheme();

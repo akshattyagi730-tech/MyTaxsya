@@ -5,7 +5,7 @@ import apiClient from '@/api/apiClient';
 import { Button } from '@/Components/ui/button';
 import StatusBadge from '@/Components/StatusBadge';
 import ConfirmDialog from '@/Components/ConfirmDialog';
-import InvoiceForm from '@/Components/invoices/InvoiceForm';
+import InvoiceForm from '@/Components/Invoices/InvoiceForm';
 import { formatINR, formatDate } from '@/lib/format';
 import { jsPDF } from 'jspdf';
 

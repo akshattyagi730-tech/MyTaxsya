@@ -1,0 +1,7 @@
+Invoice_Number,Invoice_Date,Customer_Name,Quantity,Unit_Price
+INV-TEST-001,2026-07-01,Acme Corp,5,100
+INV-TEST-005,,Beta LLC,10,250
+INV-TEST-006,2026-07-04,Delta Inc,3,150
+INV-TEST-006,2026-07-04,Delta Inc,3,150
+INV-TEST-007,2026-07-05,Sigma Co,2,abc
+INV-TEST-008,not-a-date,Omega Corp,1,100

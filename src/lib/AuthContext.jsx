@@ -47,6 +47,8 @@ export const AuthProvider = ({ children }) => {
     if (accessToken && refreshToken) {
       localStorage.setItem("access_token", accessToken);
       localStorage.setItem("refresh_token", refreshToken);
+      apiClient.defaults.headers.common["Authorization"] =
+        `Bearer ${accessToken}`;
 
       urlParams.delete("access_token");
       urlParams.delete("refresh_token");
@@ -66,12 +68,12 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {
       console.error("Logout request failed:", e);
     }
-    
+
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     setUser(null);
     setIsAuthenticated(false);
-    
+
     if (shouldRedirect) {
       window.location.href = "/login";
     }
@@ -82,9 +84,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated, 
+    <AuthContext.Provider value={{
+      user,
+      isAuthenticated,
       isLoadingAuth,
       isLoadingPublicSettings,
       authError,

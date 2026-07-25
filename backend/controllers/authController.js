@@ -253,7 +253,8 @@ export const googleLogin = (req, res) => {
 export const googleCallback = async (req, res) => {
   const { code } = req.query;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI || "http://localhost:5175/api/auth/google/callback";
-  const frontendOrigin = new URL(redirectUri).origin;
+  const frontendOrigin =
+    process.env.FRONTEND_URL || "https://tax-setu-umy4.vercel.app";
 
   if (!code) {
     return res.redirect(`${frontendOrigin}/login?error=Google authentication failed`);

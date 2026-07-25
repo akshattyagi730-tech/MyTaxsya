@@ -79,7 +79,8 @@ export default function Register() {
   };
 
   const handleGoogle = () => {
-    window.location.href = "/api/auth/google";
+    window.location.href =
+      `${import.meta.env.VITE_API_URL}/api/auth/google`;
   };
 
   if (showOtp) {

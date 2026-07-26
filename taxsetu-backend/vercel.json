@@ -1,0 +1,19 @@
+{
+  "services": {
+    "taxsetu-backend": {
+      "root": ".",
+      "entrypoint": "server.js",
+      "framework": "express",
+      "buildCommand": "npm install"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "taxsetu-backend"
+      }
+    }
+  ]
+}

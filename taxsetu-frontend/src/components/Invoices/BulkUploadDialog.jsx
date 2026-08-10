@@ -6,11 +6,79 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import {
-  UploadCloud, Loader2, CheckCircle2, AlertCircle, Download, FileSpreadsheet, ArrowRight, Check, FileText, Database, Info, Edit3
+  UploadCloud, Loader2, CheckCircle2, AlertCircle, Download, FileText, Database, Info
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import JSZip from 'jszip';
+
+const normalizeInvoiceDate = (value) => {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  let str = String(value).trim();
+  if (!str || ["null", "undefined", "n/a", "none"].includes(str.toLowerCase())) return null;
+  if (str.includes('T')) str = str.split('T')[0].trim();
+  else if (str.includes(' ')) {
+    const parts = str.split(' ');
+    if (parts[0].match(/[\/\-\.]/)) str = parts[0];
+  }
+  let year, month, day;
+  const monthMap = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+    may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8,
+    sep: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12
+  };
+  const yyyymmdd = /^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/.exec(str);
+  if (yyyymmdd) {
+    year = parseInt(yyyymmdd[1], 10);
+    month = parseInt(yyyymmdd[2], 10);
+    day = parseInt(yyyymmdd[3], 10);
+  } else {
+    const ddmmyyyy = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/.exec(str);
+    if (ddmmyyyy) {
+      day = parseInt(ddmmyyyy[1], 10);
+      month = parseInt(ddmmyyyy[2], 10);
+      year = parseInt(ddmmyyyy[3], 10);
+    } else {
+      const ddmmyy = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/.exec(str);
+      if (ddmmyy) {
+        day = parseInt(ddmmyy[1], 10);
+        month = parseInt(ddmmyy[2], 10);
+        const shortYr = parseInt(ddmmyy[3], 10);
+        year = shortYr > 50 ? 1900 + shortYr : 2000 + shortYr;
+      } else {
+        const ddmon = /^(\d{1,2})[\s\/\-\.]([A-Za-z]{3,9})[\s\/\-\.](\d{2,4})$/.exec(str);
+        if (ddmon) {
+          day = parseInt(ddmon[1], 10);
+          const mStr = ddmon[2].toLowerCase();
+          month = monthMap[mStr] || null;
+          let yVal = parseInt(ddmon[3], 10);
+          if (yVal < 100) yVal = yVal > 50 ? 1900 + yVal : 2000 + yVal;
+          year = yVal;
+        } else return null;
+      }
+    }
+  }
+  if (isNaN(year) || !month || isNaN(month) || isNaN(day)) return null;
+  if (month < 1 || month > 12) return null;
+  if (year < 1000 || year > 9999) return null;
+  const daysInMonth = (y, m) => {
+    if (m === 2) {
+      const isLeap = (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+      return isLeap ? 29 : 28;
+    }
+    if ([4, 6, 9, 11].includes(m)) return 30;
+    return 31;
+  };
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
 
 // Synonyms mapping definition
 const SYNONYMS = {
@@ -203,6 +271,8 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
   // Workspace preview list of parsed files
   const [extractedDocs, setExtractedDocs] = useState([]);
   const [selectedDocIndex, setSelectedDocIndex] = useState(0);
+  const [lastUploadedFile, setLastUploadedFile] = useState(null);
+  const [isRetryable, setIsRetryable] = useState(true);
 
   const inputRef = useRef(null);
 
@@ -214,6 +284,11 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
     setImportSummary(null);
     setExtractedDocs([]);
     setSelectedDocIndex(0);
+    setLastUploadedFile(null);
+    setIsRetryable(true);
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
   };
 
   const handleClose = () => {
@@ -222,12 +297,45 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
     onClose();
   };
 
-  const handleFileChange = async (e) => {
+  const handleRetry = () => {
+    if (lastUploadedFile) {
+      const fileToRetry = lastUploadedFile;
+      setExtractedDocs([]);
+      setSelectedDocIndex(0);
+      setImportSummary(null);
+      processUploadedFile(fileToRetry);
+    } else if (inputRef.current) {
+      inputRef.current.value = '';
+      inputRef.current.click();
+    }
+  };
+
+  const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Reset previous extraction state completely before starting fresh upload
+    setExtractedDocs([]);
+    setSelectedDocIndex(0);
+    setImportSummary(null);
+    setLastUploadedFile(null);
+    
+    processUploadedFile(file);
+    if (e.target) e.target.value = '';
+  };
+
+  const processUploadedFile = async (file) => {
+    if (!file) return;
+    console.log(`[FRONTEND-DEBUG] Processing file upload: '${file.name}' (${file.size} bytes, MIME: ${file.type})`);
+
+    // Purge any stale UI extraction state
+    setExtractedDocs([]);
+    setSelectedDocIndex(0);
+    setImportSummary(null);
+    setLastUploadedFile(file);
     setProcessing(true);
     setStatusType('info');
     setStatus('Loading file...');
+    setIsRetryable(true);
 
     try {
       const filesToProcess = [];
@@ -381,28 +489,80 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           });
 
         } else {
-          // PDFs / Images
-          const base64Data = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.readAsDataURL(item);
+          // PDFs / Images / ZIPs using FormData for streaming 100MB uploads with progress
+          const jobId = item.jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          const formData = new FormData();
+          formData.append('file', item);
+          formData.append('jobId', jobId);
+
+          setStatus(`Reading document & extracting text from ${item.name}...`);
+
+          const res = await api.post('/assistant/extract-invoice', formData, {
+            onUploadProgress: (progressEvent) => {
+              if (progressEvent.total) {
+                const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                if (percent < 100) {
+                  setStatus(`Uploading ${item.name} (${percent}%)...`);
+                } else {
+                  setStatus(`Extracting text, running OCR & AI analysis for ${item.name}...`);
+                }
+              }
+            }
           });
 
-          const res = await api.post('/assistant/extract-invoice', {
-            fileData: base64Data,
-            fileName: item.name,
-            mimeType: item.type
-          });
+          setStatus(`Validating extracted invoice data for ${item.name}...`);
 
           const data = res.data || {};
-          docResults.push({
-            fileName: item.name,
-            documentType: data.documentType || "Unknown Document",
-            confidence: data.confidence || 0.95,
-            fields: data.fields || {},
-            products: data.products || [],
-            rows: data.rows || []
-          });
+
+          // Verify job identity match
+          if (data.jobId && data.jobId !== jobId) {
+            console.warn(`[FRONTEND-WARN] Mismatched response jobId (${data.jobId}) vs active jobId (${jobId}). Ignoring result.`);
+          }
+
+          const valStatus = data.status || data.validation_status || (data.fields?.invoice_number ? "success" : "needs_review");
+
+          // If backend returned multiple documents (e.g. from a ZIP archive)
+          if (data.documents && Array.isArray(data.documents) && data.documents.length > 0) {
+            data.documents.forEach(doc => {
+              docResults.push({
+                jobId: doc.jobId || jobId,
+                fileHash: doc.fileHash || null,
+                fileName: doc.fileName || item.name,
+                status: doc.status || valStatus,
+                documentType: doc.documentType || "Sales Invoice",
+                confidence: doc.confidence !== undefined ? doc.confidence : (doc.confidence_score || 0.95),
+                fields: doc.fields || {},
+                products: doc.products || doc.line_items || [],
+                rows: doc.rows || [],
+                seller_information: doc.seller_information,
+                buyer_information: doc.buyer_information,
+                invoice_information: doc.invoice_information,
+                totals: doc.totals,
+                line_items: doc.line_items,
+                warnings: doc.warnings,
+                debug: doc.debug
+              });
+            });
+          } else {
+            docResults.push({
+              jobId: data.jobId || jobId,
+              fileHash: data.fileHash || null,
+              fileName: item.name,
+              status: valStatus,
+              documentType: data.documentType || "Sales Invoice",
+              confidence: data.confidence !== undefined ? data.confidence : (data.confidence_score || 0.95),
+              fields: data.fields || {},
+              products: data.products || data.line_items || [],
+              rows: data.rows || [],
+              seller_information: data.seller_information,
+              buyer_information: data.buyer_information,
+              invoice_information: data.invoice_information,
+              totals: data.totals,
+              line_items: data.line_items,
+              warnings: data.warnings || (valStatus === "needs_review" ? ["Invoice number could not be confidently read"] : []),
+              debug: data.debug
+            });
+          }
         }
       }
 
@@ -412,7 +572,34 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
       setStatus('');
     } catch (err) {
       setStatusType('error');
-      setStatus(err.message || 'Something went wrong while parsing file.');
+      let errorMsg = 'Invoice extraction failed';
+      const errData = err.data || {};
+      const errorCode = errData.error_code || errData.diagnostic?.error_code;
+      const retrySec = errData.diagnostic?.retry_after_seconds || 19;
+
+      const nonRetryableCodes = ['AI_DAILY_QUOTA_EXHAUSTED', 'AI_UNAUTHORIZED', 'AI_MODEL_NOT_FOUND', 'AI_CONFIG_ERROR'];
+
+      const canRetry = errData.diagnostic?.retryable !== undefined
+        ? errData.diagnostic.retryable
+        : !nonRetryableCodes.includes(errorCode);
+      setIsRetryable(canRetry);
+
+      if (errorCode === 'AI_UNAUTHORIZED') {
+        errorMsg = errData.error || 'Invalid Gemini API key provided. Please verify your GEMINI_API_KEY configuration.';
+      } else if (errorCode === 'AI_MODEL_NOT_FOUND') {
+        errorMsg = errData.error || 'Configured Gemini model was not found (HTTP 404). Please verify your GEMINI_MODEL setting.';
+      } else if (errorCode === 'AI_DAILY_QUOTA_EXHAUSTED') {
+        errorMsg = 'AI extraction quota is currently exhausted. Please try again when your Gemini quota resets or configure a higher API quota.';
+      } else if (errorCode === 'AI_RATE_LIMITED' || errorCode === 'AI_QUOTA_EXCEEDED') {
+        errorMsg = `AI rate limit reached. Please try again after ${retrySec} seconds.`;
+      } else if (err.status === 413) {
+        errorMsg = 'Invoice extraction failed (File Size Exceeded): File exceeds 100 MB limit.';
+      } else if (errData.error) {
+        errorMsg = errData.error;
+      } else if (err.message) {
+        errorMsg = err.message.startsWith('Invoice extraction failed') ? err.message : `Invoice extraction failed: ${err.message}`;
+      }
+      setStatus(errorMsg);
       setProcessing(false);
     }
   };
@@ -441,6 +628,24 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
     if (selectedDocIndex >= updated.length) {
       setSelectedDocIndex(Math.max(0, updated.length - 1));
     }
+  };
+
+  const downloadReport = () => {
+    if (!importSummary || !importSummary.failedReport) return;
+    const reportContent = importSummary.failedReport.map((item, idx) => ({
+      Index: item.rowNumber || idx + 1,
+      InvoiceNumber: item.invoiceNumber || 'N/A',
+      Error: item.error || 'Unknown processing error'
+    }));
+    const blob = new Blob([JSON.stringify(reportContent, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `error_report_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleImportAll = async () => {
@@ -499,7 +704,8 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           if (docType === "Sales Invoice" || docType === "GST Invoice") {
             const invoiceNumber = String(doc.fields.invoice_number || '').trim();
             const customerName = String(doc.fields.customer || doc.fields.business_name || 'General Customer').trim();
-            const date = String(doc.fields.invoice_date || '').trim() || new Date().toISOString().split('T')[0];
+            const rawDate = doc.fields.invoice_date || doc.invoice_information?.invoice_date || '';
+            const date = normalizeInvoiceDate(rawDate) || new Date().toISOString().split('T')[0];
 
             if (!invoiceNumber) throw new Error('Missing invoice number.');
 
@@ -546,7 +752,8 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
 
           } else if (docType === "Purchase Invoice" || docType === "Expense Receipt" || docType === "Vendor Bill") {
             const vendorName = String(doc.fields.supplier || doc.fields.business_name || 'Generic Vendor').trim();
-            const date = String(doc.fields.invoice_date || '').trim() || new Date().toISOString().split('T')[0];
+            const rawDate = doc.fields.invoice_date || doc.invoice_information?.invoice_date || '';
+            const date = normalizeInvoiceDate(rawDate) || new Date().toISOString().split('T')[0];
             const amount = doc.products.reduce((s, p) => s + (Number(p.total) || 0), 0) || Number(doc.fields.total) || 0;
             const title = docType === "Purchase Invoice"
               ? `Purchase Invoice: ${doc.fields.invoice_number || 'N/A'}`
@@ -765,16 +972,46 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
   // ====================================================
   // SCREEN: Multi-Document Preview Workspace
   // ====================================================
-  if (extractedDocs.length > 0) {
-    const selectedDoc = extractedDocs[selectedDocIndex];
-    const typeInfo = DOCUMENT_TYPES[selectedDoc.documentType] || DOCUMENT_TYPES["Unknown Document"];
+  if (Array.isArray(extractedDocs) && extractedDocs.length > 0) {
+    const safeIndex = Math.min(Math.max(0, selectedDocIndex), extractedDocs.length - 1);
+    const rawSelected = extractedDocs[safeIndex] || {};
+    const selectedDoc = {
+      fileName: rawSelected.fileName || 'Document.pdf',
+      documentType: rawSelected.documentType || 'Sales Invoice',
+      confidence: rawSelected.confidence !== undefined ? rawSelected.confidence : 0.95,
+      status: rawSelected.status || rawSelected.validation_status || "SUCCESS",
+      field_validation: rawSelected.field_validation || {},
+      fields: rawSelected.fields || {},
+      products: rawSelected.products || [],
+      rows: rawSelected.rows || [],
+      seller_information: rawSelected.seller_information || {},
+      buyer_information: rawSelected.buyer_information || {},
+      invoice_information: rawSelected.invoice_information || {},
+      totals: rawSelected.totals || {},
+      line_items: rawSelected.line_items || rawSelected.products || [],
+      warnings: rawSelected.warnings || []
+    };
+
+    const docType = selectedDoc.documentType || "Sales Invoice";
+    const typeInfo = DOCUMENT_TYPES[docType] || DOCUMENT_TYPES["Sales Invoice"] || { dest: "Invoices", collection: "Invoice" };
     const showDestination = !!typeInfo.dest;
     const isImportable = !!typeInfo.collection;
     const confidenceColor = getConfidenceColor(selectedDoc.confidence);
 
+    const valStatus = (selectedDoc.status || "SUCCESS").toUpperCase();
+    const statusBadgeClass = valStatus === "SUCCESS"
+      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-300"
+      : valStatus === "NEEDS_REVIEW"
+        ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300"
+        : "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300 border-red-300";
+
+    const docProducts = Array.isArray(selectedDoc.products) ? selectedDoc.products : [];
+    const docRows = Array.isArray(selectedDoc.rows) ? selectedDoc.rows : [];
+    const docFields = selectedDoc.fields && typeof selectedDoc.fields === 'object' ? selectedDoc.fields : {};
+
     // Check if nothing meaningful found
     const hasNoData = !selectedDoc.documentType || selectedDoc.documentType === 'Unknown Document' ||
-      (selectedDoc.products.length === 0 && selectedDoc.rows.length === 0 && Object.keys(selectedDoc.fields).length === 0);
+      (docProducts.length === 0 && docRows.length === 0 && Object.keys(docFields).length === 0);
 
     return (
       <Dialog open={open} onOpenChange={handleClose}>
@@ -794,33 +1031,41 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             {extractedDocs.length > 1 && (
               <div className="w-64 border-r border-border bg-muted/10 overflow-y-auto flex-shrink-0 p-4 space-y-2">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Documents Queue ({extractedDocs.length})</p>
-                {extractedDocs.map((doc, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => setSelectedDocIndex(idx)}
-                    className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${idx === selectedDocIndex
-                        ? 'bg-primary/5 border-primary text-primary font-semibold'
-                        : 'border-border bg-background hover:bg-muted/30 text-foreground'
-                      }`}
-                  >
-                    <div className="flex items-start justify-between gap-1.5">
-                      <p className="text-xs truncate font-mono flex-1">{doc.fileName}</p>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveDoc(idx);
-                        }}
-                        className="text-muted-foreground hover:text-red-500 font-bold text-xs"
-                      >
-                        ×
-                      </button>
+                {extractedDocs.map((doc, idx) => {
+                  const docStatus = (doc.status || doc.validation_status || "SUCCESS").toUpperCase();
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => setSelectedDocIndex(idx)}
+                      className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${idx === selectedDocIndex
+                          ? 'bg-primary/5 border-primary text-primary font-semibold'
+                          : 'border-border bg-background hover:bg-muted/30 text-foreground'
+                        }`}
+                    >
+                      <div className="flex items-start justify-between gap-1.5">
+                        <p className="text-xs truncate font-mono flex-1">{doc.fileName}</p>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveDoc(idx);
+                          }}
+                          className="text-muted-foreground hover:text-red-500 font-bold text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between mt-1.5">
+                        <p className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${doc.documentType === 'Unknown Document' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-muted text-muted-foreground border-border'
+                          }`}>
+                          {doc.documentType}
+                        </p>
+                        <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded border ${docStatus === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : docStatus === "NEEDS_REVIEW" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                          {docStatus === "NEEDS_REVIEW" ? "Needs Review" : docStatus}
+                        </span>
+                      </div>
                     </div>
-                    <p className={`text-[10px] mt-1 font-medium px-2 py-0.5 rounded-full inline-block border ${doc.documentType === 'Unknown Document' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-muted text-muted-foreground border-border'
-                      }`}>
-                      {doc.documentType}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -835,6 +1080,9 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                     <span className="text-xs text-muted-foreground">Detected Type:</span>
                     <span className="text-xs font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
                       {selectedDoc.documentType}
+                    </span>
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${statusBadgeClass}`}>
+                      Status: {valStatus === "NEEDS_REVIEW" ? "Needs Review" : valStatus}
                     </span>
                   </div>
                 </div>
@@ -861,6 +1109,20 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                 </div>
               ) : (
                 <>
+                  {/* Validation Warnings Callout */}
+                  {selectedDoc.warnings && selectedDoc.warnings.length > 0 && (
+                    <div className="p-4 border border-amber-200 bg-amber-50/40 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 rounded-xl space-y-1">
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+                        <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" /> Validation Warnings ({selectedDoc.warnings.length})
+                      </div>
+                      <ul className="list-disc list-inside text-xs space-y-0.5 pl-1">
+                        {selectedDoc.warnings.map((w, idx) => (
+                          <li key={idx}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {/* Warning if recognized but unsupported */}
                   {!isImportable && selectedDoc.documentType !== "Unknown Document" && (
                     <div className="p-4 border border-blue-200 bg-blue-50/30 dark:bg-blue-950/20 text-blue-700 dark:text-blue-400 rounded-xl flex items-start gap-2.5">
@@ -887,28 +1149,47 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                     </div>
                   )}
 
-                  {/* Header / Fields Form */}
-                  {Object.keys(selectedDoc.fields).length > 0 && (
+                  {/* Header / Fields Form with Raw vs Normalized display and Field Validation Badges */}
+                  {Object.keys(docFields).length > 0 && (
                     <div className="space-y-3">
-                      <h4 className="text-sm font-bold text-foreground">Extracted Fields</h4>
+                      <h4 className="text-sm font-bold text-foreground">Extracted Header Fields</h4>
                       <div className="grid grid-cols-2 gap-4">
-                        {Object.entries(selectedDoc.fields).map(([key, val]) => (
-                          <div key={key} className="space-y-1 p-2 bg-muted/10 border border-border rounded-lg">
-                            <label className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">{key.replace(/_/g, ' ')}</label>
-                            <input
-                              type="text"
-                              value={val || ''}
-                              onChange={(e) => handleUpdateField(selectedDocIndex, key, e.target.value)}
-                              className="w-full text-xs font-semibold bg-transparent border-none p-0.5 focus:ring-1 focus:ring-primary rounded text-foreground"
-                            />
-                          </div>
-                        ))}
+                        {Object.entries(docFields).map(([key, val]) => {
+                          const fValKey = key === "customer" ? "customer" : key === "supplier" ? "supplier" : key === "invoice_number" ? "invoice_number" : key === "invoice_date" ? "invoice_date" : key === "due_date" ? "due_date" : key;
+                          const fVal = selectedDoc.field_validation?.[fValKey] || {};
+                          const fieldStatus = fVal.status || (val ? "SUCCESS" : "NEEDS_REVIEW");
+                          const rawVal = fVal.raw ?? (key === "invoice_date" ? docFields.invoice_date_raw : key === "due_date" ? docFields.due_date_raw : null);
+
+                          return (
+                            <div key={key} className={`space-y-1 p-2.5 border rounded-lg transition-colors ${fieldStatus === "SUCCESS" ? "bg-muted/10 border-border" : fieldStatus === "NEEDS_REVIEW" ? "bg-amber-50/20 border-amber-300 dark:bg-amber-950/20" : "bg-red-50/20 border-red-300 dark:bg-red-950/20"}`}>
+                              <div className="flex items-center justify-between">
+                                <label className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">{key.replace(/_/g, ' ')}</label>
+                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${fieldStatus === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : fieldStatus === "NEEDS_REVIEW" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                                  {fieldStatus}
+                                </span>
+                              </div>
+                              <input
+                                type="text"
+                                value={val || ''}
+                                onChange={(e) => handleUpdateField(selectedDocIndex, key, e.target.value)}
+                                className="w-full text-xs font-semibold bg-transparent border-none p-0.5 focus:ring-1 focus:ring-primary rounded text-foreground"
+                                placeholder={`Enter ${key.replace(/_/g, ' ')}`}
+                              />
+                              {rawVal && rawVal !== val && (
+                                <p className="text-[10px] text-muted-foreground font-mono truncate">Raw: "{rawVal}"</p>
+                              )}
+                              {fVal.warning && (
+                                <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">{fVal.warning}</p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
 
                   {/* Products Table (for Invoices/Receipts) */}
-                  {selectedDoc.products.length > 0 && (
+                  {docProducts.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-sm font-bold text-foreground">Line Items ({selectedDoc.products.length})</h4>
                       <div className="border border-border rounded-lg overflow-hidden">
@@ -1085,14 +1366,29 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           )}
 
           {status && (
-            <div className={`flex items-start gap-2 text-sm p-3 rounded-lg ${statusType === 'error' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400'
-                : statusType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
-                  : 'bg-muted text-muted-foreground'
-              }`}>
-              {statusType === 'error' ? <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                : statusType === 'success' ? <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  : <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />}
-              <span>{status}</span>
+            <div className="space-y-2">
+              <div className={`flex items-center justify-between text-sm p-3 rounded-lg ${statusType === 'error' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400'
+                  : statusType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
+                    : 'bg-muted text-muted-foreground'
+                }`}>
+                <div className="flex items-start gap-2 flex-1">
+                  {statusType === 'error' ? <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    : statusType === 'success' ? <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      : <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />}
+                  <span>{status}</span>
+                </div>
+                {statusType === 'error' && isRetryable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRetry}
+                    disabled={processing}
+                    className="ml-3 shrink-0 border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50"
+                  >
+                    Retry Extraction
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>

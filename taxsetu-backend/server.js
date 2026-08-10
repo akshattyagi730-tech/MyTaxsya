@@ -12,6 +12,18 @@ dotenv.config();
 // Connect to Database
 connectDB();
 
+// Global Process Crash Prevention
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection caught (process protected):", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception caught (process protected):", error);
+  if (error.code === "EADDRINUSE") {
+    process.exit(1);
+  }
+});
+
 const app = express();
 
 // Middleware
@@ -30,8 +42,8 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
 // REST API Routes
 app.use("/api/auth", authRoutes);
@@ -49,8 +61,14 @@ app.get("/", (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err.stack);
-  res.status(500).json({ error: err.message || "An unexpected server error occurred" });
+  console.error("Unhandled server error:", err);
+  if (err.type === "entity.too.large" || err.status === 413 || err.statusCode === 413) {
+    return res.status(413).json({
+      error: "Request payload is too large. Maximum supported size is 100 MB.",
+      code: "PAYLOAD_TOO_LARGE"
+    });
+  }
+  res.status(err.status || err.statusCode || 500).json({ error: err.message || "An unexpected server error occurred" });
 });
 
 // Vercel imports the Express app as a serverless function. Keep a local listener

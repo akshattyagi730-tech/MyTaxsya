@@ -32,21 +32,42 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
 
   useEffect(() => {
     if (invoice) {
+      const formatDateForInput = (dStr) => {
+        if (!dStr) return '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) return dStr;
+        if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dStr)) {
+          const [d, m, y] = dStr.split('/');
+          return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        }
+        const dObj = new Date(dStr);
+        return !isNaN(dObj.getTime()) ? dObj.toISOString().split('T')[0] : dStr;
+      };
+
+      const custName = invoice.customer_name || invoice.customer || invoice.buyer?.name || '';
+      let custId = invoice.customer_id || '';
+      if (!custId && custName && customers.length > 0) {
+        const found = customers.find(c => c.name.toLowerCase() === custName.toLowerCase());
+        if (found) custId = found.id;
+      }
+      if (!custId && custName) {
+        custId = `temp_${custName.replace(/\s+/g, '_')}`;
+      }
+
       setFormData({
         invoice_number: invoice.invoice_number || '',
-        customer_id: invoice.customer_id || '',
-        customer_name: invoice.customer_name || '',
-        invoice_date: invoice.invoice_date || '',
-        due_date: invoice.due_date || '',
+        customer_id: custId,
+        customer_name: custName,
+        invoice_date: formatDateForInput(invoice.invoice_date) || new Date().toISOString().split('T')[0],
+        due_date: formatDateForInput(invoice.due_date) || '',
         status: invoice.status || 'draft',
         notes: invoice.notes || '',
         items: invoice.items?.length
           ? invoice.items.map(item => ({
             product_id: item.product_id || '',
             description: item.description || '',
-            quantity: Number(item.quantity) || 0,
+            quantity: Number(item.quantity) || 1,
             rate: Number(item.rate) || 0,
-            gst_rate: Number(item.gst_rate) || 0,
+            gst_rate: Number(item.gst_rate) !== undefined ? Number(item.gst_rate) : 18,
           }))
           : [{ product_id: '', description: '', quantity: 1, rate: 0, gst_rate: 18 }],
       });
@@ -63,7 +84,7 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
       });
     }
     setSaveError('');
-  }, [invoice, open]);
+  }, [invoice, open, customers]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -179,8 +200,9 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
   };
 
   const customerOptions = [...customers];
-  if (formData.customer_id && !customers.find(c => c.id === formData.customer_id) && formData.customer_name) {
-    customerOptions.unshift({ id: formData.customer_id, name: formData.customer_name });
+  if (formData.customer_name && !customerOptions.find(c => c.id === formData.customer_id || c.name.toLowerCase() === formData.customer_name.toLowerCase())) {
+    const fallbackId = formData.customer_id || `temp_${formData.customer_name.replace(/\s+/g, '_')}`;
+    customerOptions.unshift({ id: fallbackId, name: formData.customer_name });
   }
 
   return (

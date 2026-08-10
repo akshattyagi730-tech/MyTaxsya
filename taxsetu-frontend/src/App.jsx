@@ -36,6 +36,7 @@ import Assistant from '@/pages/Assistant';
 import Notifications from '@/pages/Notifications';
 import Team from '@/pages/Team';
 import Settings from '@/pages/Settings';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 function App() {
   return (
@@ -50,7 +51,11 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-                <Route element={<Layout />}>
+                <Route element={
+                  <ErrorBoundary>
+                    <Layout />
+                  </ErrorBoundary>
+                }>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/invoices" element={<Invoices />} />

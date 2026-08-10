@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Users, Package, Truck, Boxes,
   Wallet, Receipt, BookOpen, Landmark, BarChart3, TrendingUp,
-  Bot, Bell, UserCog, Settings as SettingsIcon, ShieldCheck,
+  Bot, Bell, UserCog, Settings as SettingsIcon,
 } from 'lucide-react';
 
 const navSections = [

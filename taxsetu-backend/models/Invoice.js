@@ -73,6 +73,47 @@ const invoiceSchema = new mongoose.Schema({
   created_by: {
     type: String,
     required: true,
+  },
+  original_filename: {
+    type: String,
+  },
+  extraction_method: {
+    type: String,
+  },
+  extraction_confidence: {
+    type: Number,
+  },
+  warnings: {
+    type: [String],
+    default: [],
+  },
+  source_document_id: {
+    type: String,
+  },
+  invoice_date_raw: {
+    type: String,
+  },
+  due_date_raw: {
+    type: String,
+  },
+  validation_status: {
+    type: String,
+    enum: ["SUCCESS", "NEEDS_REVIEW", "FAILED", "success", "needs_review", "failed"],
+    default: "SUCCESS",
+  },
+  field_validation: {
+    type: Object,
+    default: {},
+  },
+  jobId: {
+    type: String,
+  },
+  raw_data: {
+    type: Object,
+  },
+  extraction_timestamp: {
+    type: Date,
+    default: Date.now,
   }
 }, {
   timestamps: { createdAt: "created_date", updatedAt: "updated_date" },

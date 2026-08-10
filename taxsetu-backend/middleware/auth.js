@@ -11,8 +11,15 @@ export const protect = async (req, res, next) => {
       // Decode token
       const decoded = jwt.verify(token, process.env.JWT_SECRET || "your_jwt_access_secret_key_here");
 
-      // Find user
-      req.user = await User.findById(decoded.id).select("-password");
+      // Find user in DB or fallback to token payload
+      try {
+        req.user = await User.findById(decoded.id).select("-password");
+      } catch (dbErr) {
+        console.warn("DB user lookup warning in auth middleware:", dbErr.message);
+      }
+      if (!req.user && decoded.email) {
+        req.user = { _id: decoded.id, email: decoded.email, role: decoded.role || "user" };
+      }
       if (!req.user) {
         return res.status(401).json({ error: "User not found or deleted" });
       }

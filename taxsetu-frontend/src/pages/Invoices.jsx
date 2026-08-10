@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import StatusBadge from '@/components/StatusBadge';
 import InvoiceForm from '@/components/Invoices/InvoiceForm';
 import BulkUploadDialog from '@/components/Invoices/BulkUploadDialog';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { useEntityCrud } from '@/hooks/useEntityCrud';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -143,14 +144,16 @@ export default function Invoices() {
       />
 
       <InvoiceForm open={formOpen} onClose={() => setFormOpen(false)}
-        onSaved={() => { window.location.reload(); }}
+        onSaved={() => { setFormOpen(false); reload(); }}
         invoice={editItem} />
       <ConfirmDialog open={!!deleteItem} onClose={() => setDeleteItem(null)}
         onConfirm={handleDelete} loading={deleting}
         title="Delete Invoice"
         description={`Are you sure you want to delete ${deleteItem?.invoice_number}?`} />
-      <BulkUploadDialog open={bulkOpen} onClose={() => setBulkOpen(false)}
-        onDone={() => { setBulkOpen(false); window.location.reload(); }} />
+      <ErrorBoundary onReset={() => setBulkOpen(false)}>
+        <BulkUploadDialog open={bulkOpen} onClose={() => setBulkOpen(false)}
+          onDone={() => { setBulkOpen(false); reload(); }} />
+      </ErrorBoundary>
 
       <Dialog open={deleteAllOpen} onOpenChange={(open) => { if (!deletingAll) { setDeleteAllOpen(open); setConfirmInput(''); } }}>
         <DialogContent className="max-w-sm">

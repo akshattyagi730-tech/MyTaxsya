@@ -1,9 +1,12 @@
 import mongoose from 'mongoose';
-import Invoice from '../taxsetu-backend/models/Invoice.js';
-import Customer from '../taxsetu-backend/models/Customer.js';
+import jwt from 'jsonwebtoken';
+import Invoice from '../models/Invoice.js';
+import Customer from '../models/Customer.js';
+import User from '../models/User.js';
 
 const API_URL = 'http://localhost:5001/api';
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://bharatsheyoran69_db_user:r1pUdSVhYO4RlNQB@cluster0.d1fpbmw.mongodb.net/?appName=Cluster0";
+const JWT_SECRET = process.env.JWT_SECRET || "2d4d3c1a9f4f8c8b5e7a6d1c9a3b7f2e8c4d6a1b9e3f5c7d8a2b4e6f8c1d3a5";
 
 async function verifyAiImporter() {
   try {
@@ -19,32 +22,23 @@ async function verifyAiImporter() {
     await Invoice.deleteMany({ created_by: 'tester_ai@example.com' });
     await Customer.deleteMany({ created_by: 'tester_ai@example.com' });
 
-    console.log("\n3. Authenticating test user...");
-    let token = '';
-    const loginRes = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'tester_ai@example.com', password: 'Password123' })
-    });
-    if (loginRes.ok) {
-      const data = await loginRes.json();
-      token = data.access_token;
-    } else {
-      console.log("   User does not exist, registering...");
-      const regRes = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'AI Tester',
-          email: 'tester_ai@example.com',
-          password: 'Password123',
-          company_name: 'AI Test Corp'
-        })
+    console.log("\n3. Ensuring test user exists in MongoDB & issuing token...");
+    let user = await User.findOne({ email: 'tester_ai@example.com' });
+    if (!user) {
+      user = await User.create({
+        email: 'tester_ai@example.com',
+        password: 'Password123',
+        full_name: 'AI Tester',
+        role: 'admin'
       });
-      const regData = await regRes.json();
-      token = regData.access_token;
     }
-    console.log("   Authentication successful! Token received.");
+
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+    console.log("   JWT Token generated cleanly.");
 
     // ----------------------------------------------------
     // TEST A: Extract invoice from CSV/Text payload via multipart/form-data
@@ -70,11 +64,15 @@ INV-TEST-999,2026-08-08,Alpha Supplies,Beta Retailers,Standard Widget Box,5,1200
       body
     });
 
-    console.log("   [PASS] Endpoint responded with status:", extractRes.status);
+    console.log("   Endpoint responded with HTTP Status:", extractRes.status);
     const extractData = await extractRes.json();
 
     console.log("   Extracted fields:", extractData.fields);
     console.log("   Extracted products:", extractData.products);
+
+    if (extractRes.status !== 200) {
+      throw new Error(`Extraction failed with HTTP ${extractRes.status}: ${JSON.stringify(extractData)}`);
+    }
 
     if (!extractData.fields || !extractData.fields.invoice_number) {
       throw new Error("Missing invoice_number in extracted response!");

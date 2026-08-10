@@ -41,12 +41,18 @@ export default function EntityFormDialog({
                 {field.label}{field.required && <span className="text-red-500"> *</span>}
               </Label>
               {field.type === 'select' ? (
-                <Select value={formData[field.key] || ''} onValueChange={v => handleChange(field.key, v)}>
+                <Select value={formData[field.key] ? String(formData[field.key]) : undefined} onValueChange={v => handleChange(field.key, v)}>
                   <SelectTrigger><SelectValue placeholder={field.placeholder || 'Select...'} /></SelectTrigger>
                   <SelectContent>
-                    {field.options.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
+                    {(field.options || []).map(opt => {
+                      const val = typeof opt === 'object' ? opt.value : opt;
+                      const lbl = typeof opt === 'object' ? opt.label : opt;
+                      return (
+                        <SelectItem key={String(val)} value={String(val)}>
+                          {lbl}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               ) : field.type === 'textarea' ? (

@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
 import {
   Wallet, AlertCircle, Landmark, TrendingDown, Plus, FileText,
-  ShoppingBag, Boxes, TrendingUp, ArrowUpRight, ArrowDownRight,
-  ClipboardList, Users, Package, RefreshCw
+  ShoppingBag, Boxes, TrendingUp,
+  ClipboardList, Package, RefreshCw
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,

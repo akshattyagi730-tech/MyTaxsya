@@ -12,7 +12,24 @@ export const formatINRCompact = (amount) => {
 
 export const formatDate = (dateStr) => {
   if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
+
+  let str = String(dateStr).trim();
+  if (!str || ["null", "undefined", "n/a"].includes(str.toLowerCase())) return '—';
+
+  // Check DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const ddmmyyyy = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/.exec(str);
+  if (ddmmyyyy) {
+    const day = parseInt(ddmmyyyy[1], 10);
+    const month = parseInt(ddmmyyyy[2], 10);
+    const year = parseInt(ddmmyyyy[3], 10);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const dStr = String(day).padStart(2, '0');
+      return `${dStr} ${months[month - 1]} ${year}`;
+    }
+  }
+
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };

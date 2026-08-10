@@ -1,10 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import api from '@/services/api';
 import PageHeader from '@/components/PageHeader';
-import StatCard from '@/components/dashboard/StatCard';
 import { jsPDF } from 'jspdf';
 import {
-  TrendingUp, TrendingDown, Wallet, FileText, Download,
+  TrendingUp, Wallet, FileText, Download,
   BarChart3, Receipt, Users, Truck, Boxes, Landmark, RefreshCw
 } from 'lucide-react';
 import { formatINR, formatDate } from '@/utils/format';

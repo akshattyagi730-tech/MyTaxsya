@@ -7,6 +7,7 @@ import Payment from "../models/Payment.js";
 import Product from "../models/Product.js";
 import Supplier from "../models/Supplier.js";
 import User from "../models/User.js";
+import { normalizeInvoiceDate } from "../services/extractionEngine.js";
 
 const models = {
   Business,
@@ -17,12 +18,28 @@ const models = {
   Payment,
   Product,
   Supplier,
-  User
+  User,
+  Businesses: Business,
+  Customers: Customer,
+  Expenses: Expense,
+  Invoices: Invoice,
+  Notifications: Notification,
+  Payments: Payment,
+  Products: Product,
+  Suppliers: Supplier,
+  Users: User
 };
 
 const getModel = (entityName) => {
-  const normalized = entityName.charAt(0).toUpperCase() + entityName.slice(1);
-  return models[normalized];
+  if (!entityName) return null;
+  const lower = entityName.toLowerCase().trim();
+  const key = Object.keys(models).find(
+    k => k.toLowerCase() === lower ||
+         k.toLowerCase() + 's' === lower ||
+         k.toLowerCase() + 'es' === lower ||
+         (k.toLowerCase().endsWith('y') && k.toLowerCase().slice(0, -1) + 'ies' === lower)
+  );
+  return key ? models[key] : null;
 };
 
 // Duplicate prevention validation
@@ -246,12 +263,33 @@ export const createEntity = async (req, res) => {
       }
     }
 
+    const safeConvertToDate = (val) => {
+      if (!val) return null;
+      if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+      const normStr = normalizeInvoiceDate(val);
+      if (!normStr) return null;
+      const d = new Date(`${normStr}T00:00:00.000Z`);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
     let result;
     if (Array.isArray(req.body)) {
       const data = req.body.map(item => {
         const mapped = { ...item };
         if (Model.modelName !== "User") {
           mapped.created_by = req.user.email;
+        }
+        if (Model.modelName === "Invoice") {
+          if (!mapped.invoice_date_raw && mapped.invoice_date) {
+            mapped.invoice_date_raw = String(mapped.invoice_date);
+          }
+          if (!mapped.due_date_raw && mapped.due_date) {
+            mapped.due_date_raw = String(mapped.due_date);
+          }
+          mapped.invoice_date = safeConvertToDate(mapped.invoice_date);
+          mapped.due_date = safeConvertToDate(mapped.due_date);
+        } else if (Model.modelName === "Expense") {
+          mapped.date = safeConvertToDate(mapped.date) || new Date();
         }
         return mapped;
       });
@@ -260,6 +298,18 @@ export const createEntity = async (req, res) => {
       const data = { ...req.body };
       if (Model.modelName !== "User") {
         data.created_by = req.user.email;
+      }
+      if (Model.modelName === "Invoice") {
+        if (!data.invoice_date_raw && data.invoice_date) {
+          data.invoice_date_raw = String(data.invoice_date);
+        }
+        if (!data.due_date_raw && data.due_date) {
+          data.due_date_raw = String(data.due_date);
+        }
+        data.invoice_date = safeConvertToDate(data.invoice_date);
+        data.due_date = safeConvertToDate(data.due_date);
+      } else if (Model.modelName === "Expense") {
+        data.date = safeConvertToDate(data.date) || new Date();
       }
       result = await Model.create(data);
     }
@@ -347,6 +397,28 @@ export const updateEntity = async (req, res) => {
           }
         }
       }
+    }
+
+    const safeConvertToDate = (val) => {
+      if (!val) return null;
+      if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+      const normStr = normalizeInvoiceDate(val);
+      if (!normStr) return null;
+      const d = new Date(`${normStr}T00:00:00.000Z`);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
+    if (Model.modelName === "Invoice") {
+      if (req.body.invoice_date) {
+        if (!req.body.invoice_date_raw) req.body.invoice_date_raw = String(req.body.invoice_date);
+        req.body.invoice_date = safeConvertToDate(req.body.invoice_date);
+      }
+      if (req.body.due_date) {
+        if (!req.body.due_date_raw) req.body.due_date_raw = String(req.body.due_date);
+        req.body.due_date = safeConvertToDate(req.body.due_date);
+      }
+    } else if (Model.modelName === "Expense") {
+      if (req.body.date) req.body.date = safeConvertToDate(req.body.date) || new Date();
     }
 
     const item = await Model.findOneAndUpdate(query, req.body, {

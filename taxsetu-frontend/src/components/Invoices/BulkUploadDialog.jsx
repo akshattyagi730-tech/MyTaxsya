@@ -1219,6 +1219,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                                     value={item.quantity || 0}
                                     onChange={(e) => handleUpdateProduct(selectedDocIndex, idx, 'quantity', Number(e.target.value))}
                                     className="w-12 bg-transparent border-none p-0.5 focus:ring-1 focus:ring-primary rounded text-center"
+                                    step="any"
                                   />
                                 </td>
                                 <td className="p-2 text-right">
@@ -1227,6 +1228,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                                     value={item.rate || 0}
                                     onChange={(e) => handleUpdateProduct(selectedDocIndex, idx, 'rate', Number(e.target.value))}
                                     className="w-20 bg-transparent border-none p-0.5 focus:ring-1 focus:ring-primary rounded text-right"
+                                    step="0.01"
                                   />
                                 </td>
                                 <td className="p-2 text-right">
@@ -1235,6 +1237,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                                     value={item.total || (item.quantity * item.rate) || 0}
                                     onChange={(e) => handleUpdateProduct(selectedDocIndex, idx, 'total', Number(e.target.value))}
                                     className="w-20 bg-transparent border-none p-0.5 focus:ring-1 focus:ring-primary rounded text-right"
+                                    step="0.01"
                                   />
                                 </td>
                               </tr>

@@ -291,17 +291,17 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
                       <td className="px-2 py-2">
                         <Input type="number" value={item.quantity}
                           onChange={e => handleItemChange(i, 'quantity', Number(e.target.value))}
-                          className="h-9 text-right" min="1" required />
+                          className="h-9 text-right" min="1" step="any" required />
                       </td>
                       <td className="px-2 py-2">
                         <Input type="number" value={item.rate}
                           onChange={e => handleItemChange(i, 'rate', Number(e.target.value))}
-                          className="h-9 text-right" min="0" required />
+                          className="h-9 text-right" min="0" step="0.01" required />
                       </td>
                       <td className="px-2 py-2">
                         <Input type="number" value={item.gst_rate}
                           onChange={e => handleItemChange(i, 'gst_rate', Number(e.target.value))}
-                          className="h-9 text-right" min="0" required />
+                          className="h-9 text-right" min="0" step="0.01" required />
                       </td>
                       <td className="px-2 py-2 text-right text-sm font-medium">
                         {formatINR(item.quantity * item.rate)}

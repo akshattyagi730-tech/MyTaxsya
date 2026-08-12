@@ -669,6 +669,7 @@ CRITICAL RULES:
 4. Return ONLY a valid JSON object — no markdown, no code fences, no explanation.
 5. Line-item quantity may appear as a compound notation such as "4:0" or "4+0" (billed:free units, common on medical/pharmacy invoices) or "10+1" (10 billed + 1 free). In these cases, extract the FIRST number (the billed quantity) as "quantity" — do not default to 1 just because the format is unfamiliar.
 6. If the invoice has a Discount line (a deduction applied after Subtotal and before tax/Grand Total), extract its amount as "discount". This is a document-level discount, separate from any per-item discount.
+7. You do not reliably know today's real date. NEVER add a "warnings" entry judging whether "invoice_date" or "due_date" is in the future, in the past, or otherwise implausible relative to any assumed current date. Just extract the date exactly as printed.
 
 Required JSON schema:
 {
@@ -829,7 +830,7 @@ function runWithVisionLock(fn) {
   "total_amount": number | null,
   "extraction_confidence": 0.95
 }
-Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract the first number as quantity. "discount" is a document-level deduction between Subtotal and Grand Total, if present.`
+Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract the first number as quantity. "discount" is a document-level deduction between Subtotal and Grand Total, if present. You do not reliably know today's real date — never add commentary or warnings about whether a date is in the future or past; just extract dates exactly as printed.`
             },
             {
               role: "user",

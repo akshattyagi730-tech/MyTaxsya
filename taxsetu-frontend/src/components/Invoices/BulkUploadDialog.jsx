@@ -709,29 +709,50 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
 
             if (!invoiceNumber) throw new Error('Missing invoice number.');
 
-            // Create customer if missing
+            // Create customer if missing — carry over the extracted buyer's
+            // state/GSTIN/address so downstream intra-/inter-state (CGST+SGST
+            // vs IGST) detection has the data it needs.
             let customerId = customerMap[customerName.toLowerCase()];
             if (!customerId) {
-              const res = await api.post('/entities/Customer', { name: customerName, status: 'active' });
+              const buyerInfo = doc.buyer_information || {};
+              const res = await api.post('/entities/Customer', {
+                name: customerName,
+                status: 'active',
+                state: buyerInfo.state || undefined,
+                gstin: buyerInfo.gstin || undefined,
+                billing_address: buyerInfo.address || undefined
+              });
               customerId = res.data.id || res.data._id;
               customerMap[customerName.toLowerCase()] = customerId;
             }
 
-            const total = doc.products.reduce((s, p) => s + (Number(p.total) || (Number(p.quantity) * Number(p.rate)) || 0), 0);
+            const itemsSum = doc.products.reduce((s, p) => s + (Number(p.total) || (Number(p.quantity) * Number(p.rate)) || 0), 0);
+            const discount = Number(doc.totals?.discount) || 0;
+            const cgst = Number(doc.totals?.cgst) || 0;
+            const sgst = Number(doc.totals?.sgst) || 0;
+            const igst = Number(doc.totals?.igst) || 0;
+            // Prefer the invoice's own printed/extracted grand total when available —
+            // line-item totals may already include tax, so re-adding cgst/sgst/igst
+            // on top of them would double-count it.
+            const total = Number(doc.totals?.grand_total) || Math.max(0, itemsSum - discount);
 
             const record = {
               invoice_number: invoiceNumber,
               customer_id: customerId,
               customer_name: customerName,
               invoice_date: date,
-              subtotal: total,
+              subtotal: itemsSum,
+              discount,
+              cgst,
+              sgst,
+              igst,
               total,
               status: 'draft',
               items: doc.products.map(p => ({
                 description: p.description || 'Imported Item',
                 quantity: Number(p.quantity) || 1,
-                rate: Number(p.rate) || total,
-                amount: p.total || total,
+                rate: Number(p.rate) || itemsSum,
+                amount: p.total || itemsSum,
                 gst_rate: Number(p.gst_rate) || 0
               })),
               ai_confidence: doc.confidence,

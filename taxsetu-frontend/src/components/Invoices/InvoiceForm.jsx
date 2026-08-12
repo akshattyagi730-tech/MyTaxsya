@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -25,10 +25,21 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
     due_date: '',
     status: 'draft',
     notes: '',
+    discount: 0,
+    cgst: 0,
+    sgst: 0,
+    igst: 0,
     items: [{ product_id: '', description: '', quantity: 1, rate: 0, gst_rate: 18 }],
   });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  // Once the user (or an imported invoice) supplies an explicit CGST/SGST/IGST
+  // breakdown, stop silently recalculating it from items so real printed values
+  // aren't overwritten. A ref (not state) is required here: the invoice-load
+  // effect below and the auto-calc effect can both run within the same commit,
+  // and a state update from the first wouldn't be visible to the second until
+  // the next render — a ref updates synchronously, closing that race.
+  const taxOverriddenRef = useRef(false);
 
   useEffect(() => {
     if (invoice) {
@@ -61,6 +72,10 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
         due_date: formatDateForInput(invoice.due_date) || '',
         status: invoice.status || 'draft',
         notes: invoice.notes || '',
+        discount: Number(invoice.discount) || 0,
+        cgst: Number(invoice.cgst) || 0,
+        sgst: Number(invoice.sgst) || 0,
+        igst: Number(invoice.igst) || 0,
         items: invoice.items?.length
           ? invoice.items.map(item => ({
             product_id: item.product_id || '',
@@ -71,6 +86,9 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
           }))
           : [{ product_id: '', description: '', quantity: 1, rate: 0, gst_rate: 18 }],
       });
+      // An existing invoice's stored CGST/SGST/IGST reflects what was actually
+      // printed/imported — don't silently recompute it away as items are viewed.
+      taxOverriddenRef.current = true;
     } else {
       setFormData({
         invoice_number: `INV-${Date.now().toString().slice(-6)}`,
@@ -80,8 +98,13 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
         due_date: '',
         status: 'draft',
         notes: '',
+        discount: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
         items: [{ product_id: '', description: '', quantity: 1, rate: 0, gst_rate: 18 }],
       });
+      taxOverriddenRef.current = false;
     }
     setSaveError('');
   }, [invoice, open, customers]);
@@ -117,13 +140,31 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
 
   const subtotal = formData.items.reduce((s, item) => s + (item.quantity * item.rate), 0);
   const totalGst = formData.items.reduce((s, item) => s + (item.quantity * item.rate * item.gst_rate / 100), 0);
+  const discount = Number(formData.discount) || 0;
 
-  // Tax determination (CGST + SGST vs IGST)
-  const cgst = isInterstate ? 0 : totalGst / 2;
-  const sgst = isInterstate ? 0 : totalGst / 2;
-  const igst = isInterstate ? totalGst : 0;
+  // Suggested CGST+SGST / IGST split, derived from line items and billing state.
+  const autoCgst = isInterstate ? 0 : totalGst / 2;
+  const autoSgst = isInterstate ? 0 : totalGst / 2;
+  const autoIgst = isInterstate ? totalGst : 0;
 
-  const rawTotal = subtotal + totalGst;
+  // Keep CGST/SGST/IGST in sync with items until the user (or an imported
+  // invoice) sets an explicit value — then respect that value instead.
+  useEffect(() => {
+    if (!taxOverriddenRef.current) {
+      setFormData(prev => ({ ...prev, cgst: autoCgst, sgst: autoSgst, igst: autoIgst }));
+    }
+  }, [autoCgst, autoSgst, autoIgst]);
+
+  const cgst = Number(formData.cgst) || 0;
+  const sgst = Number(formData.sgst) || 0;
+  const igst = Number(formData.igst) || 0;
+
+  const handleTaxChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value === '' ? '' : Number(value) }));
+    taxOverriddenRef.current = true;
+  };
+
+  const rawTotal = subtotal - discount + cgst + sgst + igst;
   const total = Math.round(rawTotal);
   const roundOff = Number((total - rawTotal).toFixed(2));
 
@@ -176,6 +217,7 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
     const payload = {
       ...formData,
       subtotal,
+      discount,
       cgst,
       sgst,
       igst,
@@ -204,6 +246,11 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
     const fallbackId = formData.customer_id || `temp_${formData.customer_name.replace(/\s+/g, '_')}`;
     customerOptions.unshift({ id: fallbackId, name: formData.customer_name });
   }
+  // Radix's Select.Value only shows a selected item's label once that item has
+  // actually mounted (i.e. the dropdown has been opened at least once), so a
+  // freshly-opened edit dialog can show the placeholder even though a valid
+  // customer_id is set. Resolve the label ourselves and pass it in directly.
+  const selectedCustomerLabel = customerOptions.find(c => c.id === formData.customer_id)?.name || '';
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -221,7 +268,9 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
             <div className="space-y-1.5">
               <Label>Customer *</Label>
               <Select value={formData.customer_id} onValueChange={handleCustomerChange}>
-                <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select customer">{selectedCustomerLabel || undefined}</SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {customerOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
@@ -324,9 +373,39 @@ export default function InvoiceForm({ open, onClose, onSaved, invoice = null }) 
           <div className="flex justify-end">
             <div className="w-80 space-y-1.5 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatINR(subtotal)}</span></div>
-              {cgst > 0 && <div className="flex justify-between"><span className="text-muted-foreground">CGST</span><span>{formatINR(cgst)}</span></div>}
-              {sgst > 0 && <div className="flex justify-between"><span className="text-muted-foreground">SGST</span><span>{formatINR(sgst)}</span></div>}
-              {igst > 0 && <div className="flex justify-between"><span className="text-muted-foreground">IGST</span><span>{formatINR(igst)}</span></div>}
+              <div className="flex justify-between items-center gap-2">
+                <Label htmlFor="invoice-discount" className="text-muted-foreground font-normal">Discount</Label>
+                <Input id="invoice-discount" type="number" min="0" step="0.01"
+                  value={formData.discount}
+                  onChange={e => setFormData(prev => ({ ...prev, discount: e.target.value === '' ? '' : Number(e.target.value) }))}
+                  className="h-7 w-28 text-right" placeholder="0" />
+              </div>
+              {isInterstate ? (
+                <div className="flex justify-between items-center gap-2">
+                  <Label htmlFor="invoice-igst" className="text-muted-foreground font-normal">IGST</Label>
+                  <Input id="invoice-igst" type="number" min="0" step="0.01"
+                    value={formData.igst}
+                    onChange={e => handleTaxChange('igst', e.target.value)}
+                    className="h-7 w-28 text-right" placeholder="0" />
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center gap-2">
+                    <Label htmlFor="invoice-cgst" className="text-muted-foreground font-normal">CGST</Label>
+                    <Input id="invoice-cgst" type="number" min="0" step="0.01"
+                      value={formData.cgst}
+                      onChange={e => handleTaxChange('cgst', e.target.value)}
+                      className="h-7 w-28 text-right" placeholder="0" />
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <Label htmlFor="invoice-sgst" className="text-muted-foreground font-normal">SGST</Label>
+                    <Input id="invoice-sgst" type="number" min="0" step="0.01"
+                      value={formData.sgst}
+                      onChange={e => handleTaxChange('sgst', e.target.value)}
+                      className="h-7 w-28 text-right" placeholder="0" />
+                  </div>
+                </>
+              )}
               {roundOff !== 0 && (
                 <div className="flex justify-between text-muted-foreground text-xs">
                   <span>Round-off</span>

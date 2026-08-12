@@ -142,6 +142,10 @@ export const normalizeExtractedJson = (rawJson) => {
   json.cess = normalizeNumber(json.cess ?? totalsObj.cess ?? null);
   json.round_off = normalizeNumber(json.round_off ?? totalsObj.round_off ?? null);
 
+  // Document-level discount (a deduction between Subtotal and Grand Total),
+  // distinct from any per-item discount inside items[].
+  json.discount = normalizeNumber(json.discount ?? json.discount_amount ?? totalsObj.discount ?? null) ?? 0;
+
   json.total_amount_raw = json.total_amount ?? json.grand_total ?? json.total ?? json.net_amount ?? totalsObj.grand_total ?? totalsObj.total_amount ?? null;
   json.total_amount = normalizeNumber(json.total_amount_raw);
 
@@ -151,8 +155,23 @@ export const normalizeExtractedJson = (rawJson) => {
     const desc = item.description ?? item.desc ?? item.item_name ?? item.product ?? "Line Item";
     const qty = normalizeNumber(item.quantity ?? item.qty) ?? 1;
     const rate = normalizeNumber(item.rate ?? item.unit_price ?? item.price) ?? 0;
+    const gstRate = normalizeNumber(item.gst_rate) ?? 0;
     const taxableVal = normalizeNumber(item.taxable_value ?? item.taxable_amount ?? item.subtotal) ?? (qty * rate);
-    const itemTotal = normalizeNumber(item.total ?? item.amount ?? item.line_total) ?? taxableVal;
+    const explicitTotal = normalizeNumber(item.total ?? item.amount ?? item.line_total);
+    const itemTotal = explicitTotal ?? taxableVal;
+
+    // Bug-catching check: if the AI also read an explicit line total independently
+    // of qty*rate (e.g. from a printed "Amount" column), and it doesn't match qty*rate
+    // grossed up by the line's GST rate, the quantity or rate was likely misread
+    // (e.g. compound notations like "4:0"). Flag it instead of silently trusting a
+    // self-inconsistent line.
+    let warning = null;
+    if (explicitTotal !== null && rate > 0) {
+      const expected = qty * rate * (1 + gstRate / 100);
+      if (Math.abs(explicitTotal - expected) > Math.max(1.0, expected * 0.02)) {
+        warning = `Line item "${String(desc).trim()}": quantity (${qty}) × rate (${rate})${gstRate ? ` incl. ${gstRate}% GST` : ''} = ₹${expected.toFixed(2)}, but printed amount is ₹${explicitTotal.toFixed(2)}. Quantity or rate may have been misread — please verify.`;
+      }
+    }
 
     return {
       description: String(desc).trim(),
@@ -167,7 +186,8 @@ export const normalizeExtractedJson = (rawJson) => {
       sgst: normalizeNumber(item.sgst) ?? null,
       igst: normalizeNumber(item.igst) ?? null,
       cess: normalizeNumber(item.cess) ?? null,
-      total: itemTotal
+      total: itemTotal,
+      warning
     };
   });
 
@@ -618,11 +638,17 @@ export const processDocumentPipeline = async (buffer, fileName, mimeType, inputJ
     }
   }
 
-  // STAGE 3b: PDF Page Rasterization (produces a raster image for vision fallback
-  // when native text extraction failed — vision models cannot read raw PDF bytes)
+  // STAGE 3b: PDF Page Rasterization (produces a raster image for vision extraction).
+  // Always attempted for PDFs, even when native text extraction "succeeded" — dense
+  // multi-column tables (e.g. pharmacy invoices with SN/HSN/Batch/Qty/MRP/Amount/SGST/
+  // CGST columns) routinely get their column alignment scrambled by pdf-parse's
+  // flattened text output, silently corrupting individual cells (observed: a "4:0"
+  // quantity misread as "1") even though the extraction looks internally consistent.
+  // Vision sees the actual table layout and has proven more reliable in practice, so
+  // it's now tried first for every PDF; the text-based paths remain as fallbacks.
   let pdfVisionBuffer = null;
-  if (isPdfFile && !diagnostic.native_text_extraction.success) {
-    console.log(`[PIPELINE-STEP 3b] Rendering PDF page to image for vision fallback: '${fileName}'...`);
+  if (isPdfFile) {
+    console.log(`[PIPELINE-STEP 3b] Rendering PDF page to image for vision extraction: '${fileName}'...`);
     pdfVisionBuffer = await renderPdfPageToJpeg(buffer);
     if (pdfVisionBuffer) {
       console.log(`[PIPELINE-STEP 3b] PDF page rendered to JPEG (${pdfVisionBuffer.length} bytes).`);
@@ -641,6 +667,8 @@ CRITICAL RULES:
 2. Extract every field EXACTLY as printed on the document. NEVER invent or guess values.
 3. If a field is not visible or unreadable, return null for that field.
 4. Return ONLY a valid JSON object — no markdown, no code fences, no explanation.
+5. Line-item quantity may appear as a compound notation such as "4:0" or "4+0" (billed:free units, common on medical/pharmacy invoices) or "10+1" (10 billed + 1 free). In these cases, extract the FIRST number (the billed quantity) as "quantity" — do not default to 1 just because the format is unfamiliar.
+6. If the invoice has a Discount line (a deduction applied after Subtotal and before tax/Grand Total), extract its amount as "discount". This is a document-level discount, separate from any per-item discount.
 
 Required JSON schema:
 {
@@ -651,6 +679,7 @@ Required JSON schema:
   "place_of_supply": string | null,
   "items": [{ "description": string, "hsn": string | null, "quantity": number | null, "unit": string | null, "rate": number | null, "discount": number | null, "taxable_value": number | null, "gst_rate": number | null, "cgst": number | null, "sgst": number | null, "igst": number | null, "cess": number | null, "total": number | null }],
   "taxable_amount": number | null,
+  "discount": number | null,
   "cgst": number | null,
   "sgst": number | null,
   "igst": number | null,
@@ -796,9 +825,11 @@ function runWithVisionLock(fn) {
   "buyer": { "name": string | null, "gstin": string | null, "address": string | null, "state": string | null },
   "items": [ { "description": string, "quantity": number | null, "rate": number | null, "total": number | null } ],
   "taxable_amount": number | null,
+  "discount": number | null,
   "total_amount": number | null,
   "extraction_confidence": 0.95
-}`
+}
+Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract the first number as quantity. "discount" is a document-level deduction between Subtotal and Grand Total, if present.`
             },
             {
               role: "user",
@@ -884,8 +915,13 @@ function runWithVisionLock(fn) {
   if (!extractedJson.buyer?.name) missing_fields.push("buyer.name");
   if (extractedJson.total_amount === null) missing_fields.push("total_amount");
 
-  // Math consistency check
+  // Surface per-line-item math-consistency warnings (e.g. quantity misreads like "4:0")
   const items = extractedJson.items || [];
+  items.forEach(item => {
+    if (item.warning) warnings.push(item.warning);
+  });
+
+  // Math consistency check
   if (items.length > 0) {
     const itemsTaxableSum = items.reduce((s, item) => s + (item.taxable_value || item.total || 0), 0);
     const declaredTaxable = extractedJson.taxable_amount || extractedJson.total_amount || 0;
@@ -893,7 +929,7 @@ function runWithVisionLock(fn) {
       warnings.push(`Mathematical discrepancy: Sum of line items (₹${itemsTaxableSum.toFixed(2)}) differs from declared taxable amount (₹${declaredTaxable.toFixed(2)}).`);
     }
 
-    const calculatedTotal = itemsTaxableSum + (extractedJson.cgst || 0) + (extractedJson.sgst || 0) + (extractedJson.igst || 0) + (extractedJson.cess || 0) + (extractedJson.round_off || 0);
+    const calculatedTotal = itemsTaxableSum - (extractedJson.discount || 0) + (extractedJson.cgst || 0) + (extractedJson.sgst || 0) + (extractedJson.igst || 0) + (extractedJson.cess || 0) + (extractedJson.round_off || 0);
     const declaredTotal = extractedJson.total_amount || 0;
     if (declaredTotal > 0 && Math.abs(calculatedTotal - declaredTotal) > 1.0) {
       warnings.push(`Total discrepancy: Calculated total (₹${calculatedTotal.toFixed(2)}) differs from invoice grand total (₹${declaredTotal.toFixed(2)}).`);
@@ -1097,6 +1133,7 @@ function runWithVisionLock(fn) {
     },
     totals: {
       taxable_value: extractedJson.taxable_amount,
+      discount: extractedJson.discount,
       cgst: extractedJson.cgst,
       sgst: extractedJson.sgst,
       igst: extractedJson.igst,

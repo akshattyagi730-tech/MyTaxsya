@@ -30,6 +30,10 @@ const statusStyles = {
 
 const computeTrend = (current, previous) => {
   if (current === 0 && previous === 0) return { change: '0%', trend: 'neutral' };
+  // No data in the current period — the values these trends are paired with are
+  // lifetime cumulative totals, so a raw "current vs previous month" percentage
+  // (e.g. -100%) would misleadingly imply the total itself dropped to zero.
+  if (current === 0) return { change: '—', trend: 'neutral' };
   if (previous === 0 && current > 0) return { change: '+100%', trend: 'up' };
   if (current === previous) return { change: '0%', trend: 'neutral' };
   const pct = ((current - previous) / previous) * 100;

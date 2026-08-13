@@ -28,18 +28,16 @@ const statusStyles = {
   rejected: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400',
 };
 
+// Period-over-period change: current calendar month vs previous calendar month,
+// applied the same way to every dashboard card's trend badge.
 const computeTrend = (current, previous) => {
-  if (current === 0 && previous === 0) return { change: '0%', trend: 'neutral' };
-  // No data in the current period — the values these trends are paired with are
-  // lifetime cumulative totals, so a raw "current vs previous month" percentage
-  // (e.g. -100%) would misleadingly imply the total itself dropped to zero.
-  if (current === 0) return { change: '—', trend: 'neutral' };
+  if (previous === 0 && current === 0) return { change: '—', trend: 'neutral' };
   if (previous === 0 && current > 0) return { change: '+100%', trend: 'up' };
-  if (current === previous) return { change: '0%', trend: 'neutral' };
+  if (previous > 0 && current === 0) return { change: '-100%', trend: 'down' };
   const pct = ((current - previous) / previous) * 100;
-  if (isNaN(pct) || !isFinite(pct)) return { change: '0%', trend: 'neutral' };
-  if (current > previous) return { change: `+${pct.toFixed(1)}%`, trend: 'up' };
-  return { change: `${pct.toFixed(1)}%`, trend: 'down' };
+  if (pct > 0) return { change: `+${pct.toFixed(1)}%`, trend: 'up' };
+  if (pct < 0) return { change: `${pct.toFixed(1)}%`, trend: 'down' };
+  return { change: '0%', trend: 'neutral' };
 };
 
 export default function Dashboard() {
@@ -150,6 +148,7 @@ export default function Dashboard() {
   const growth = useMemo(() => {
     const invoices = data.invoices || [];
     const expenses = data.expenses || [];
+    const payments = data.payments || [];
     const now = new Date();
     const thisM = now.getMonth(), thisY = now.getFullYear();
     const prevD = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -162,6 +161,16 @@ export default function Dashboard() {
 
     const getSales = (m, y) => invoices.filter(i => i.status !== 'cancelled' && i.status !== 'draft' && inMonth(i.invoice_date || i.created_date, m, y)).reduce((s, i) => s + (i.total || 0), 0);
     const getExpenses = (m, y) => expenses.filter(e => inMonth(e.date || e.created_date, m, y)).reduce((s, e) => s + (e.amount || 0), 0);
+    const getRevenue = (m, y) => payments.filter(p => p.status === 'success' && inMonth(p.date || p.created_date, m, y)).reduce((s, p) => s + (p.amount || 0), 0);
+    const getGstCollected = (m, y) => invoices.filter(i => i.status !== 'cancelled' && i.status !== 'draft' && inMonth(i.invoice_date || i.created_date, m, y)).reduce((s, i) => s + (i.cgst || 0) + (i.sgst || 0) + (i.igst || 0), 0);
+    const getGstPaid = (m, y) => expenses.filter(e => inMonth(e.date || e.created_date, m, y)).reduce((s, e) => s + (e.gst_amount || 0), 0);
+    const getGstPayable = (m, y) => Math.max(0, getGstCollected(m, y) - getGstPaid(m, y));
+    // Pending Collections is a running balance (currently-outstanding invoices), which
+    // has no natural "period" of its own — scope it to invoices that became due/pending
+    // within each month, so the trend reflects new receivables created that month.
+    const getPending = (m, y) => invoices.filter(i => (i.status === 'sent' || i.status === 'overdue') && inMonth(i.invoice_date || i.created_date, m, y)).reduce((s, i) => s + (i.balance_due || i.total || 0), 0);
+    const getProfit = (m, y) => Math.max(0, getSales(m, y) - getExpenses(m, y));
+    const getLoss = (m, y) => Math.max(0, getExpenses(m, y) - getSales(m, y));
 
     const currentSales = getSales(thisM, thisY);
     const previousSales = getSales(prevM, prevY);
@@ -172,6 +181,12 @@ export default function Dashboard() {
     return {
       salesTrend: computeTrend(currentSales, previousSales),
       expensesTrend: computeTrend(currentExp, previousExp),
+      revenueTrend: computeTrend(getRevenue(thisM, thisY), getRevenue(prevM, prevY)),
+      profitTrend: computeTrend(getProfit(thisM, thisY), getProfit(prevM, prevY)),
+      lossTrend: computeTrend(getLoss(thisM, thisY), getLoss(prevM, prevY)),
+      pendingTrend: computeTrend(getPending(thisM, thisY), getPending(prevM, prevY)),
+      gstCollectedTrend: computeTrend(getGstCollected(thisM, thisY), getGstCollected(prevM, prevY)),
+      gstPayableTrend: computeTrend(getGstPayable(thisM, thisY), getGstPayable(prevM, prevY)),
       salesDiff: { current: currentSales, previous: previousSales },
       expensesDiff: { current: currentExp, previous: previousExp }
     };
@@ -283,16 +298,16 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Total Sales" value={formatINR(metrics.sales)} icon={ShoppingBag} change={growth.salesTrend.change} trend={growth.salesTrend.trend} accent="blue" subtitle="Accrual turnover" />
         <StatCard title="Total Expenses" value={formatINR(metrics.expenses)} icon={TrendingDown} change={growth.expensesTrend.change} trend={growth.expensesTrend.trend} accent="rose" subtitle="Operational expenses" />
-        <StatCard title="Net Profit" value={formatINR(metrics.profit)} icon={TrendingUp} change={metrics.profit > 0 ? "Active" : "—"} trend={metrics.profit > 0 ? "up" : "neutral"} accent="green" subtitle="Sales minus expenses" />
-        <StatCard title="Net Loss" value={formatINR(metrics.loss)} icon={AlertCircle} change={metrics.loss > 0 ? "Deficit" : "—"} trend={metrics.loss > 0 ? "down" : "neutral"} accent="rose" subtitle="Expenses minus sales" />
+        <StatCard title="Net Profit" value={formatINR(metrics.profit)} icon={TrendingUp} change={growth.profitTrend.change} trend={growth.profitTrend.trend} accent="green" subtitle="Sales minus expenses" />
+        <StatCard title="Net Loss" value={formatINR(metrics.loss)} icon={AlertCircle} change={growth.lossTrend.change} trend={growth.lossTrend.trend} accent="rose" subtitle="Expenses minus sales" />
       </div>
 
       {/* Grid Row 2: Cash Collection & Tax */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Cash Revenue" value={formatINR(metrics.revenue)} icon={Wallet} change="Collected" trend="up" accent="green" subtitle="Successful payments" />
-        <StatCard title="Pending Collections" value={formatINR(metrics.pendingPayments)} icon={AlertCircle} change="Receivables" trend="neutral" accent="amber" subtitle="Awaiting payments" />
-        <StatCard title="GST Collected" value={formatINR(metrics.gstCollected)} icon={Landmark} change="Output Tax" trend="up" accent="violet" subtitle="Tax from bills" />
-        <StatCard title="GST Payable" value={formatINR(metrics.gstPayable)} icon={ClipboardList} change="Net Liability" trend="neutral" accent="indigo" subtitle="Output tax minus ITC" />
+        <StatCard title="Cash Revenue" value={formatINR(metrics.revenue)} icon={Wallet} change={growth.revenueTrend.change} trend={growth.revenueTrend.trend} accent="green" subtitle="Successful payments" />
+        <StatCard title="Pending Collections" value={formatINR(metrics.pendingPayments)} icon={AlertCircle} change={growth.pendingTrend.change} trend={growth.pendingTrend.trend} accent="amber" subtitle="Awaiting payments" />
+        <StatCard title="GST Collected" value={formatINR(metrics.gstCollected)} icon={Landmark} change={growth.gstCollectedTrend.change} trend={growth.gstCollectedTrend.trend} accent="violet" subtitle="Tax from bills" />
+        <StatCard title="GST Payable" value={formatINR(metrics.gstPayable)} icon={ClipboardList} change={growth.gstPayableTrend.change} trend={growth.gstPayableTrend.trend} accent="indigo" subtitle="Output tax minus ITC" />
       </div>
 
       {/* Grid Row 3: Live Sales Windows & Stock */}

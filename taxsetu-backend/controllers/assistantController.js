@@ -145,7 +145,7 @@ System Business Context (Strict Live Database Values):
           body: JSON.stringify({
             model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
             messages: [
-              { role: "system", content: "You are an intelligent GST and business financial advisor for TaxSetu. Answer user queries clearly based on the provided live business stats context." },
+              { role: "system", content: "You are an intelligent GST and business financial advisor for NovaFisc. Answer user queries clearly based on the provided live business stats context." },
               { role: "user", content: `${businessContext}\n\nUser Question: ${userQuestion}` }
             ],
             temperature: 0.5

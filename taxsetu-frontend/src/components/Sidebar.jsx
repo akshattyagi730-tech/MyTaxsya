@@ -60,9 +60,9 @@ export default function Sidebar({ open, onClose }) {
         ${open ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex items-center gap-3 px-5 h-16 border-b border-sidebar-border">
-          <img src="/logo.png" alt="TaxSetu Logo" className="w-9 h-9 object-contain rounded-md bg-card p-0.5" />
+          <img src="/logo.png" alt="NovaFisc Logo" className="w-9 h-9 object-contain rounded-md bg-card p-0.5" />
           <div>
-            <p className="font-heading font-bold text-[15px] leading-tight text-sidebar-foreground">TaxSetu</p>
+            <p className="font-heading font-bold text-[15px] leading-tight text-sidebar-foreground">NovaFisc</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider">GST & Accounting</p>
           </div>
         </div>

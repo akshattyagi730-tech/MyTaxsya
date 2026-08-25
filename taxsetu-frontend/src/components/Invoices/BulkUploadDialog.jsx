@@ -677,7 +677,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
       const supplierMap = {};
       dbSuppliers.forEach(s => { supplierMap[s.name.toLowerCase()] = s.id || s._id; });
       const productMap = {};
-      dbProducts.forEach(p => { productMap[p.sku.toLowerCase()] = p.id || p._id; });
+      dbProducts.forEach(p => { if (p.sku) productMap[p.sku.toLowerCase()] = p.id || p._id; });
       const invoiceMap = {};
       dbInvoices.forEach(i => { if (i.invoice_number) invoiceMap[i.invoice_number.toLowerCase()] = i.id || i._id; });
 

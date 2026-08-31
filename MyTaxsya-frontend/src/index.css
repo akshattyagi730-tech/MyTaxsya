@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Taxsya Design System — light (source of truth, from Stitch export) */
+    --background: 330 40% 98%;
+    --foreground: 240 4% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 4% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 4% 11%;
+    --primary: 222 47% 11%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 175 100% 21%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 320 14% 96%;
+    --muted-foreground: 232 5% 29%;
+    --accent: 33 100% 39%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 75% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 7% 79%;
+    --input: 240 7% 79%;
+    --ring: 175 84% 32%;
+    --chart-1: 222 47% 11%;
+    --chart-2: 175 100% 21%;
+    --chart-3: 33 100% 39%;
+    --chart-4: 0 75% 42%;
+    --chart-5: 320 9% 60%;
+    --radius: 0.5rem;
+    --font-heading: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 232 5% 29%;
+    --sidebar-primary: 222 47% 11%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 320 14% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 240 7% 88%;
+    --sidebar-ring: 175 84% 32%;
+  }
+
+  .dark {
+    /* Taxsya Design System — dark (derived from Stitch's own "-fixed-dim"/inverse tokens) */
+    --background: 230 13% 9%;
+    --foreground: 320 11% 95%;
+    --card: 225 12% 13%;
+    --card-foreground: 320 11% 95%;
+    --popover: 225 12% 13%;
+    --popover-foreground: 320 11% 95%;
+    --primary: 226 35% 81%;
+    --primary-foreground: 222 42% 13%;
+    --secondary: 173 58% 63%;
+    --secondary-foreground: 174 100% 6%;
+    --muted: 225 10% 16%;
+    --muted-foreground: 240 7% 79%;
+    --accent: 27 100% 75%;
+    --accent-foreground: 222 42% 13%;
+    --destructive: 6 100% 84%;
+    --destructive-foreground: 222 42% 13%;
+    --border: 228 8% 25%;
+    --input: 228 8% 25%;
+    --ring: 173 58% 63%;
+    --chart-1: 226 35% 81%;
+    --chart-2: 173 58% 63%;
+    --chart-3: 27 100% 75%;
+    --chart-4: 6 100% 84%;
+    --chart-5: 320 11% 70%;
+    --sidebar-background: 225 12% 13%;
+    --sidebar-foreground: 240 7% 79%;
+    --sidebar-primary: 226 35% 81%;
+    --sidebar-primary-foreground: 222 42% 13%;
+    --sidebar-accent: 225 10% 16%;
+    --sidebar-accent-foreground: 320 11% 95%;
+    --sidebar-border: 228 8% 25%;
+    --sidebar-ring: 173 58% 63%;
+  }
+}
+
+
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+
+  #base44-badge {
+    display: none !important;
+  }
+}

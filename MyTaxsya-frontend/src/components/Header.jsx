@@ -1,6 +1,7 @@
 import {
   Search, Bell, Sun, Moon, LogOut, User as UserIcon, Settings, Menu,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from './ThemeProvider';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ import {
 export default function Header({ onMenuClick }) {
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const displayName = user?.full_name || user?.email?.split('@')[0] || 'User';
   const initials = displayName.slice(0, 2).toUpperCase();
@@ -38,7 +40,7 @@ export default function Header({ onMenuClick }) {
             {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
           </Button>
 
-          <Button variant="ghost" size="icon" className="h-10 w-10 relative">
+          <Button variant="ghost" size="icon" className="h-10 w-10 relative" onClick={() => navigate('/notifications')}>
             <Bell className="w-[18px] h-[18px]" />
             <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-destructive" />
           </Button>
@@ -62,8 +64,8 @@ export default function Header({ onMenuClick }) {
                 <p className="text-xs text-muted-foreground capitalize">{user?.role || 'user'}</p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem><UserIcon className="w-4 h-4 mr-2" /> Profile</DropdownMenuItem>
-              <DropdownMenuItem><Settings className="w-4 h-4 mr-2" /> Settings</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/settings')}><UserIcon className="w-4 h-4 mr-2" /> Profile</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/settings')}><Settings className="w-4 h-4 mr-2" /> Settings</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => logout()} className="text-destructive">
                 <LogOut className="w-4 h-4 mr-2" /> Sign out

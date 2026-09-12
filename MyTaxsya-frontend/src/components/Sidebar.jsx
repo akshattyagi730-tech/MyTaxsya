@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Users, Package, Truck, Boxes,
-  Wallet, Receipt, BookOpen, Landmark, BarChart3, TrendingUp,
+  Wallet, Receipt, ShoppingBag, BookOpen, Landmark, BarChart3, TrendingUp,
   Bot, Bell, UserCog, Settings as SettingsIcon,
 } from 'lucide-react';
 
@@ -25,6 +25,7 @@ const navSections = [
       { label: 'Inventory', path: '/inventory', icon: Boxes },
       { label: 'Payments', path: '/payments', icon: Wallet },
       { label: 'Expenses', path: '/expenses', icon: Receipt },
+      { label: 'Purchase Bills', path: '/purchase-bills', icon: ShoppingBag },
       { label: 'Ledger', path: '/ledger', icon: BookOpen },
       { label: 'GST Center', path: '/gst', icon: Landmark },
     ],

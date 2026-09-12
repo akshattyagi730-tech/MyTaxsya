@@ -5,6 +5,7 @@ import Invoice from "../models/Invoice.js";
 import Notification from "../models/Notification.js";
 import Payment from "../models/Payment.js";
 import Product from "../models/Product.js";
+import PurchaseBill from "../models/PurchaseBill.js";
 import Supplier from "../models/Supplier.js";
 import User from "../models/User.js";
 import { normalizeInvoiceDate } from "../services/extractionEngine.js";
@@ -17,6 +18,7 @@ const models = {
   Notification,
   Payment,
   Product,
+  PurchaseBill,
   Supplier,
   User,
   Businesses: Business,
@@ -26,6 +28,7 @@ const models = {
   Notifications: Notification,
   Payments: Payment,
   Products: Product,
+  PurchaseBills: PurchaseBill,
   Suppliers: Supplier,
   Users: User
 };
@@ -82,6 +85,13 @@ const checkDuplicates = async (Model, body, userEmail, excludeId = null) => {
       query.payment_number = body.payment_number;
       const count = await Model.countDocuments(query);
       if (count > 0) throw new Error(`Payment number "${body.payment_number}" already exists`);
+    }
+  } else if (Model.modelName === "PurchaseBill") {
+    if (body.bill_number && body.supplier_name) {
+      query.bill_number = body.bill_number;
+      query.supplier_name = { $regex: new RegExp(`^${body.supplier_name.trim()}$`, "i") };
+      const count = await Model.countDocuments(query);
+      if (count > 0) throw new Error(`Bill number "${body.bill_number}" already exists for supplier "${body.supplier_name}"`);
     }
   }
 };
@@ -290,6 +300,9 @@ export const createEntity = async (req, res) => {
           mapped.due_date = safeConvertToDate(mapped.due_date);
         } else if (Model.modelName === "Expense") {
           mapped.date = safeConvertToDate(mapped.date) || new Date();
+        } else if (Model.modelName === "PurchaseBill") {
+          mapped.bill_date = safeConvertToDate(mapped.bill_date) || new Date();
+          if (mapped.due_date) mapped.due_date = safeConvertToDate(mapped.due_date);
         }
         return mapped;
       });
@@ -310,6 +323,9 @@ export const createEntity = async (req, res) => {
         data.due_date = safeConvertToDate(data.due_date);
       } else if (Model.modelName === "Expense") {
         data.date = safeConvertToDate(data.date) || new Date();
+      } else if (Model.modelName === "PurchaseBill") {
+        data.bill_date = safeConvertToDate(data.bill_date) || new Date();
+        if (data.due_date) data.due_date = safeConvertToDate(data.due_date);
       }
       result = await Model.create(data);
     }
@@ -419,6 +435,9 @@ export const updateEntity = async (req, res) => {
       }
     } else if (Model.modelName === "Expense") {
       if (req.body.date) req.body.date = safeConvertToDate(req.body.date) || new Date();
+    } else if (Model.modelName === "PurchaseBill") {
+      if (req.body.bill_date) req.body.bill_date = safeConvertToDate(req.body.bill_date) || new Date();
+      if (req.body.due_date) req.body.due_date = safeConvertToDate(req.body.due_date);
     }
 
     const item = await Model.findOneAndUpdate(query, req.body, {

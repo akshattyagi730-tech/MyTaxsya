@@ -28,6 +28,7 @@ import Payments from '@/pages/Payments';
 import PaymentDetail from '@/pages/PaymentDetail';
 import Expenses from '@/pages/Expenses';
 import ExpenseDetail from '@/pages/ExpenseDetail';
+import PurchaseBills from '@/pages/PurchaseBills';
 import Ledger from '@/pages/Ledger';
 import GstCenter from '@/pages/GstCenter';
 import Reports from '@/pages/Reports';
@@ -71,6 +72,7 @@ function App() {
                   <Route path="/payments/:id" element={<PaymentDetail />} />
                   <Route path="/expenses" element={<Expenses />} />
                   <Route path="/expenses/:id" element={<ExpenseDetail />} />
+                  <Route path="/purchase-bills" element={<PurchaseBills />} />
                   <Route path="/ledger" element={<Ledger />} />
                   <Route path="/gst" element={<GstCenter />} />
                   <Route path="/reports" element={<Reports />} />

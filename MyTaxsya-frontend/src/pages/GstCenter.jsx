@@ -16,7 +16,7 @@ const ISSUED_STATUSES = ['sent', 'paid', 'overdue'];
 export default function GstCenter() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
-  const [expenses, setExpenses] = useState([]);
+  const [purchaseBills, setPurchaseBills] = useState([]);
   const [business, setBusiness] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -26,13 +26,13 @@ export default function GstCenter() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [invRes, expRes, bizRes] = await Promise.all([
+        const [invRes, pbRes, bizRes] = await Promise.all([
           api.get('/entities/Invoice', { params: { sort: '-created_date', limit: 200 } }),
-          api.get('/entities/Expense', { params: { sort: '-created_date', limit: 200 } }),
+          api.get('/entities/PurchaseBill', { params: { sort: '-created_date', limit: 200 } }),
           api.get('/entities/Business', { params: { sort: '-created_date', limit: 10 } }),
         ]);
         setInvoices(invRes.data);
-        setExpenses(expRes.data);
+        setPurchaseBills(pbRes.data);
         if (bizRes.data && bizRes.data.length > 0) {
           setBusiness(bizRes.data[0]);
         }
@@ -61,14 +61,15 @@ export default function GstCenter() {
     const outputIGST = issuedInvoices.reduce((s, i) => s + (i.igst || 0), 0);
     const outputTax = outputCGST + outputSGST + outputIGST;
 
-    // ITC side: existing Expense records have no supplier GSTIN, invoice
-    // number, or ITC-eligibility review yet (that's a dedicated Purchase
-    // Bill workflow, coming in a later phase) — so an "approved" expense
-    // with a GST amount is the best available signal today, but it must be
-    // labelled as legacy/unverified, not presented as fully vetted ITC.
-    const eligibleExpenses = expenses.filter(e => e.status === 'approved' && (e.gst_amount || 0) > 0);
-    const excludedExpenses = expenses.filter(e => !(e.status === 'approved' && (e.gst_amount || 0) > 0));
-    const inputTax = eligibleExpenses.reduce((s, e) => s + (e.gst_amount || 0), 0);
+    // ITC side: sourced from recorded Purchase Bills — the dedicated model
+    // that carries supplier GSTIN, per-bill CGST/SGST/IGST, and an explicit
+    // ITC-eligibility review (blocked credits under Sec 17(5) are excluded
+    // even if GST was charged). A bill only counts once it's "recorded"
+    // (not draft) and marked ITC-eligible.
+    const billTax = (b) => (b.cgst || 0) + (b.sgst || 0) + (b.igst || 0);
+    const eligibleBills = purchaseBills.filter(b => b.status === 'recorded' && b.itc_eligible !== false && billTax(b) > 0);
+    const excludedBills = purchaseBills.filter(b => !(b.status === 'recorded' && b.itc_eligible !== false && billTax(b) > 0));
+    const inputTax = eligibleBills.reduce((s, b) => s + billTax(b), 0);
 
     const rawNet = outputTax - inputTax;
     const netPayable = Math.max(0, rawNet);
@@ -77,16 +78,16 @@ export default function GstCenter() {
     return {
       outputCGST, outputSGST, outputIGST, outputTax, inputTax,
       netPayable, itcCarriedForward,
-      issuedInvoices, excludedInvoices, eligibleExpenses, excludedExpenses,
+      issuedInvoices, excludedInvoices, eligibleBills, excludedBills,
     };
-  }, [invoices, expenses]);
+  }, [invoices, purchaseBills]);
 
   const excludedReason = (inv) => inv.status === 'draft' ? 'Draft — not yet issued' : inv.status === 'cancelled' ? 'Cancelled' : `Status: ${inv.status}`;
-  const excludedExpenseReason = (e) => {
-    if (!(e.gst_amount > 0)) return 'No GST amount recorded';
-    if (e.status === 'pending') return 'Awaiting approval';
-    if (e.status === 'rejected') return 'Rejected';
-    return `Status: ${e.status}`;
+  const excludedBillReason = (b) => {
+    if (b.status === 'draft') return 'Draft — not yet recorded';
+    if (b.itc_eligible === false) return `Blocked credit${b.itc_ineligible_reason ? ` — ${b.itc_ineligible_reason.replace(/_/g, ' ')}` : ''}`;
+    if (!((b.cgst || 0) + (b.sgst || 0) + (b.igst || 0) > 0)) return 'No GST amount recorded';
+    return `Status: ${b.status}`;
   };
 
   const exportGstr1Json = () => {
@@ -140,13 +141,14 @@ export default function GstCenter() {
       ['Output Tax (SGST)', gstData.outputSGST],
       ['Output Tax (IGST)', gstData.outputIGST],
       ['Total Output Tax', gstData.outputTax],
-      ['Input Tax Credit (legacy/unverified — approved expenses only)', gstData.inputTax],
+      ['Input Tax Credit (recorded, ITC-eligible purchase bills)', gstData.inputTax],
       ['Net Tax Payable', gstData.netPayable],
       ['ITC Credit Carried Forward', gstData.itcCarriedForward],
       [''],
       ['Source invoices used', gstData.issuedInvoices.length],
       ['Source invoices excluded (draft/cancelled)', gstData.excludedInvoices.length],
-      ['Approved expense bills used for ITC', gstData.eligibleExpenses.length],
+      ['Purchase bills used for ITC', gstData.eligibleBills.length],
+      ['Purchase bills excluded (draft/blocked credit)', gstData.excludedBills.length],
     ];
     const csv = rows.map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -200,7 +202,7 @@ export default function GstCenter() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Output Tax (Sales)" value={formatINR(gstData.outputTax)} icon={TrendingUp} accent="blue" subtitle={`From ${gstData.issuedInvoices.length} issued invoices`} />
-        <StatCard title="Input Tax (Purchases)" value={formatINR(gstData.inputTax)} icon={TrendingDown} accent="amber" subtitle={`From ${gstData.eligibleExpenses.length} approved bills`} />
+        <StatCard title="Input Tax (Purchases)" value={formatINR(gstData.inputTax)} icon={TrendingDown} accent="amber" subtitle={`From ${gstData.eligibleBills.length} recorded purchase bills`} />
         <StatCard title="Net GST Payable" value={formatINR(gstData.itcCarriedForward > 0 ? 0 : gstData.netPayable)} icon={Wallet} accent={gstData.netPayable > 0 ? 'rose' : 'green'} subtitle={gstData.itcCarriedForward > 0 ? 'ITC carried forward instead' : 'Estimate — to be paid'} />
         <StatCard title="Total Invoices" value={invoices.length} icon={Landmark} accent="violet" subtitle={`${gstData.issuedInvoices.length} issued, ${gstData.excludedInvoices.length} excluded`} />
       </div>
@@ -246,7 +248,7 @@ export default function GstCenter() {
           <CardHeader><CardTitle className="font-heading">GSTR-3B Summary (Monthly Return)</CardTitle></CardHeader>
           <CardContent className="space-y-2.5 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">Output Tax</span><span className="font-medium">{formatINR(gstData.outputTax)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Input Tax Credit <span className="text-[10px] text-muted-foreground/70">(legacy, unverified)</span></span><span className="font-medium">{formatINR(gstData.inputTax)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Input Tax Credit</span><span className="font-medium">{formatINR(gstData.inputTax)}</span></div>
             <div className="flex justify-between border-t border-border pt-2.5"><span className="font-medium">Net Tax Payable</span><span className="font-bold text-lg">{formatINR(gstData.netPayable)}</span></div>
             {gstData.itcCarriedForward > 0 && (
               <div className="flex justify-between"><span className="text-muted-foreground">ITC Carried Forward</span><span className="font-medium text-secondary">{formatINR(gstData.itcCarriedForward)}</span></div>
@@ -255,23 +257,23 @@ export default function GstCenter() {
             <button type="button" onClick={() => setShowItcDrilldown(v => !v)}
               className="flex items-center gap-1 text-xs text-primary font-medium pt-1">
               {showItcDrilldown ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              {gstData.eligibleExpenses.length} bills counted as ITC, {gstData.excludedExpenses.length} excluded — show source list
+              {gstData.eligibleBills.length} bills counted as ITC, {gstData.excludedBills.length} excluded — show source list
             </button>
             {showItcDrilldown && (
               <div className="border border-border rounded-lg divide-y divide-border max-h-56 overflow-y-auto text-xs">
-                {gstData.eligibleExpenses.map(e => (
-                  <div key={e.id} className="flex justify-between px-3 py-1.5">
-                    <span>{e.title} <span className="text-secondary">(counted — approved)</span></span>
-                    <span className="font-medium">{formatINR(e.gst_amount)}</span>
+                {gstData.eligibleBills.map(b => (
+                  <div key={b.id} className="flex justify-between px-3 py-1.5">
+                    <span>{b.bill_number} <span className="text-secondary">({b.supplier_name} — recorded)</span></span>
+                    <span className="font-medium">{formatINR((b.cgst || 0) + (b.sgst || 0) + (b.igst || 0))}</span>
                   </div>
                 ))}
-                {gstData.excludedExpenses.map(e => (
-                  <div key={e.id} className="flex justify-between px-3 py-1.5 text-muted-foreground">
-                    <span>{e.title} <span className="text-destructive">(excluded — {excludedExpenseReason(e)})</span></span>
-                    <span>{formatINR(e.gst_amount || 0)}</span>
+                {gstData.excludedBills.map(b => (
+                  <div key={b.id} className="flex justify-between px-3 py-1.5 text-muted-foreground">
+                    <span>{b.bill_number} <span className="text-destructive">(excluded — {excludedBillReason(b)})</span></span>
+                    <span>{formatINR((b.cgst || 0) + (b.sgst || 0) + (b.igst || 0))}</span>
                   </div>
                 ))}
-                {expenses.length === 0 && <div className="px-3 py-4 text-center text-muted-foreground">No expenses yet.</div>}
+                {purchaseBills.length === 0 && <div className="px-3 py-4 text-center text-muted-foreground">No purchase bills yet — add one to start claiming ITC.</div>}
               </div>
             )}
 

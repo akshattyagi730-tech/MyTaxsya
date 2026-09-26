@@ -43,7 +43,12 @@ Deploy the backend first, as the frontend needs the backend URL for its configur
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
 | `GOOGLE_REDIRECT_URI` | Google OAuth Redirect Callback URI (e.g. `https://your-backend.onrender.com/api/auth/google/callback`) |
-| `GEMINI_API_KEY` | (Optional) Gemini AI API Key for assistant functionality |
+| `GEMINI_API_KEY` | Gemini API key used to read invoice/bill images and PDFs. **Enable billing on this key's Google project**: the free tier allows only ~5 requests per minute per model, which throttles bulk imports, and free-tier content may be used by Google to improve its products |
+| `GEMINI_MODEL` | (Optional) Main model, default `gemini-3.6-flash` |
+| `GEMINI_FALLBACK_MODELS` | (Optional) Comma-separated backup models tried when the main one is rate limited, out of quota or unavailable. Default `gemini-3.5-flash-lite,gemini-3.1-flash-lite`; empty disables fallbacks. Documents read by a backup model are marked *Needs review* |
+| `GEMINI_MAX_CONCURRENCY` | (Optional) How many files are read by the AI at the same time, default `6`. **Do not set it to 1** unless you want strictly one-at-a-time uploads. Keep it within your project's rate limit (Google AI Studio -> Rate limits) |
+| `GEMINI_THINKING_LEVEL` | (Optional) `minimal` (default), `low`, `medium`, `high` or `default`. Thinking tokens are billed as output; `minimal` cuts the cost of an invoice by about 60% with the same accuracy on our tests |
+| `OCR_MAX_CONCURRENCY` | (Optional) Local OCR jobs at once, default `2` (each uses about 60 MB of memory) |
 | `OPENAI_API_KEY` | (Optional) OpenAI API key; used only if Gemini is unavailable |
 
 5. Deploy the service and copy the generated service URL (e.g., `https://taxsetu-backend.onrender.com`). Render supplies `PORT` automatically. Confirm the deployment at `https://your-backend.onrender.com/api/health`; it should return `{ "status": "ok" }`.

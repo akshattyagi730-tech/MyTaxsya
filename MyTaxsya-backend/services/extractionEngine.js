@@ -6,6 +6,8 @@ import sharp from "sharp";
 import { createCanvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { aiProvider, incrementDeduplicatedHits } from "./aiProvider.js";
+import { reconcileInvoice } from "./invoiceMath.js";
+import { createLimiter, envInt } from "../utils/limiter.js";
 
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
@@ -30,10 +32,14 @@ export const ERROR_CODES = {
   DATABASE_SAVE_FAILED: "DATABASE_SAVE_FAILED"
 };
 
+// Every Tesseract.recognize() call spins up its own WASM worker (~60 MB each), so a
+// bulk upload with parallel files would multiply that. Cap how many run at once.
+const ocrLimiter = createLimiter(() => envInt("OCR_MAX_CONCURRENCY", 2));
+
 // Helper: Perform Local OCR using Tesseract.js if needed
 const runLocalOcr = async (buffer) => {
   try {
-    const { data: { text } } = await Tesseract.recognize(buffer, 'eng');
+    const { data: { text } } = await ocrLimiter(() => Tesseract.recognize(buffer, 'eng'));
     return text || "";
   } catch (err) {
     console.warn("Tesseract OCR fallback warning:", err.message);
@@ -161,15 +167,18 @@ export const normalizeExtractedJson = (rawJson) => {
     const itemTotal = explicitTotal ?? taxableVal;
 
     // Bug-catching check: if the AI also read an explicit line total independently
-    // of qty*rate (e.g. from a printed "Amount" column), and it doesn't match qty*rate
-    // grossed up by the line's GST rate, the quantity or rate was likely misread
-    // (e.g. compound notations like "4:0"). Flag it instead of silently trusting a
-    // self-inconsistent line.
+    // of qty*rate (e.g. from a printed "Amount" column), and it matches neither
+    // qty*rate (ex-tax, the usual B2B tax invoice) nor qty*rate grossed up by the
+    // line's GST rate (GST-inclusive / MRP bills), the quantity or rate was likely
+    // misread (e.g. compound notations like "4:0"). Flag it instead of silently
+    // trusting a self-inconsistent line.
     let warning = null;
     if (explicitTotal !== null && rate > 0) {
-      const expected = qty * rate * (1 + gstRate / 100);
-      if (Math.abs(explicitTotal - expected) > Math.max(1.0, expected * 0.02)) {
-        warning = `Line item "${String(desc).trim()}": quantity (${qty}) × rate (${rate})${gstRate ? ` incl. ${gstRate}% GST` : ''} = ₹${expected.toFixed(2)}, but printed amount is ₹${explicitTotal.toFixed(2)}. Quantity or rate may have been misread — please verify.`;
+      const exclusive = qty * rate;
+      const inclusive = exclusive * (1 + gstRate / 100);
+      const within = (expected) => Math.abs(explicitTotal - expected) <= Math.max(1.0, expected * 0.02);
+      if (!within(exclusive) && !within(inclusive)) {
+        warning = `Line item "${String(desc).trim()}": quantity (${qty}) × rate (${rate}) = ₹${exclusive.toFixed(2)}${gstRate ? ` (₹${inclusive.toFixed(2)} incl. ${gstRate}% GST)` : ''}, but printed amount is ₹${explicitTotal.toFixed(2)}. Quantity or rate may have been misread — please verify.`;
       }
     }
 
@@ -566,6 +575,8 @@ export const processDocumentPipeline = async (buffer, fileName, mimeType, inputJ
         .resize(900, 900, { fit: "inside", withoutEnlargement: true })
         .jpeg({ quality: 80 })
         .toBuffer();
+      // The bytes are JPEG now, whatever the upload was (PNG, WebP, ...): label them honestly.
+      mimeType = "image/jpeg";
       console.log(`[PIPELINE-PREPROCESS] Auto-rotated & resized image '${fileName}' to ${buffer.length} bytes.`);
     } catch (sharpErr) {
       console.warn(`[PIPELINE-WARN] Image auto-rotation warning for '${fileName}':`, sharpErr.message);
@@ -660,6 +671,11 @@ export const processDocumentPipeline = async (buffer, fileName, mimeType, inputJ
   // STAGE 4: AI Structured Extraction
   let extractedJson = null;
   let aiErrorObj = null;
+  // Set when the AI itself failed (rate limit, quota, outage) and nothing else produced data,
+  // so callers can tell "AI could not read it" apart from "this document has nothing in it".
+  let aiFailure = null;
+  // True when the data came from plain text matching instead of an AI model.
+  let usedTextParsing = false;
 
   const groqVisionSchema = `You are an expert Indian GST invoice extraction engine.
 CRITICAL RULES:
@@ -799,7 +815,9 @@ function runWithVisionLock(fn) {
       console.log(`[PIPELINE-STEP 4b] Initiating Gemini AI extraction for '${fileName}'...`);
       extractedJson = await aiProvider.extractStructuredData({ prompt, buffer, mimeType, fileName });
       diagnostic.ai_extraction.success = true;
-      diagnostic.ai_extraction.provider_model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+      // The model that actually answered, which is a fallback when the primary was unavailable.
+      diagnostic.ai_extraction.provider_model = extractedJson?.__model || aiProvider.model;
+      diagnostic.ai_extraction.fallback_used = diagnostic.ai_extraction.provider_model !== aiProvider.model;
       console.log(`[PIPELINE-STEP 4b] Gemini AI extraction completed for '${fileName}'.`);
     } catch (aiErr) {
       console.warn(`[PIPELINE-WARN] Gemini AI provider error for ${fileName}:`, aiErr.error_message || aiErr.message);
@@ -850,6 +868,7 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
         extractedJson = JSON.parse(rawText);
         diagnostic.ai_extraction.success = true;
         diagnostic.ai_extraction.provider_model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+        diagnostic.ai_extraction.fallback_used = true;
         console.log(`[PIPELINE-STEP 4b] Groq LLM extraction succeeded for '${fileName}'.`);
       }
     } catch (groqErr) {
@@ -862,6 +881,7 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
     console.log(`[PIPELINE-STEP 5] Attempting deterministic GST text parsing for '${fileName}'...`);
     extractedJson = parseGstFromText(extractedText, fileName);
     if (extractedJson) {
+      usedTextParsing = true;
       console.log(`[PIPELINE-STEP 5] Deterministic GST text parsing succeeded for '${fileName}'.`);
     }
   }
@@ -871,6 +891,15 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
   // so the user can review and edit their uploaded document in the UI instead of facing a crash screen.
   if (!extractedJson) {
     console.warn(`[PIPELINE-WARN] Building editable review draft for '${fileName}' (All AI methods exhausted)...`);
+    if (aiErrorObj) {
+      aiFailure = {
+        code: aiErrorObj.code || ERROR_CODES.AI_REQUEST_FAILED,
+        message: aiErrorObj.error_message || aiErrorObj.message || "AI extraction failed.",
+        retryable: aiErrorObj.retryable === true,
+        retry_after_seconds: aiErrorObj.retry_after_seconds ?? null
+      };
+      diagnostic.ai_extraction.error = aiFailure;
+    }
     extractedJson = {
       invoice_number: null,
       invoice_date: null,
@@ -916,6 +945,17 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
   const missing_fields = [];
   const warnings = extractedJson.warnings || [];
 
+  // Text matching is a last resort: never let its result pass as a confident AI read.
+  if (usedTextParsing) {
+    warnings.push(aiErrorObj
+      ? `The AI could not read this document (${aiErrorObj.error_message || aiErrorObj.message || "AI unavailable"}). It was read with basic text matching only, so please review it carefully.`
+      : "This document was read with basic text matching only (no AI), so please review it carefully.");
+  }
+
+  if (diagnostic.ai_extraction.fallback_used) {
+    warnings.push(`Read by the backup model "${diagnostic.ai_extraction.provider_model}" because the main model was unavailable. Please review this document carefully.`);
+  }
+
   if (!invoiceNumber) missing_fields.push("invoice_number");
   if (!normalizedInvoiceDate) missing_fields.push("invoice_date");
   if (!extractedJson.seller?.name) missing_fields.push("seller.name");
@@ -928,21 +968,37 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
     if (item.warning) warnings.push(item.warning);
   });
 
-  // Math consistency check
+  // Math consistency check — re-do the arithmetic ourselves rather than trusting the model's totals.
+  // Works out whether the bill prices are ex-tax or GST-inclusive (MRP) by testing each against the
+  // printed grand total, and flags bills where neither reproduces it (a misread qty/rate/tax).
   let totalDiscrepancyPct = 0;
+  let reconciliation = null;
   if (items.length > 0) {
-    const itemsTaxableSum = items.reduce((s, item) => s + (item.taxable_value || item.total || 0), 0);
-    const declaredTaxable = extractedJson.taxable_amount || extractedJson.total_amount || 0;
-    if (declaredTaxable > 0 && Math.abs(itemsTaxableSum - declaredTaxable) > 1.0) {
-      warnings.push(`Mathematical discrepancy: Sum of line items (₹${itemsTaxableSum.toFixed(2)}) differs from declared taxable amount (₹${declaredTaxable.toFixed(2)}).`);
+    reconciliation = reconcileInvoice({
+      items,
+      discount: extractedJson.discount,
+      cgst: extractedJson.cgst,
+      sgst: extractedJson.sgst,
+      igst: extractedJson.igst,
+      cess: extractedJson.cess,
+      round_off: extractedJson.round_off,
+      declaredTotal: extractedJson.total_amount,
+      seller: extractedJson.seller,
+      buyer: extractedJson.buyer
+    });
+
+    // On a GST-inclusive bill the line amounts are gross, so comparing their sum with an ex-tax
+    // "taxable amount" would raise a false alarm — the reconciliation above already covers it.
+    if (reconciliation.mode !== "inclusive") {
+      const itemsTaxableSum = items.reduce((s, item) => s + (item.taxable_value || item.total || 0), 0);
+      const declaredTaxable = extractedJson.taxable_amount || extractedJson.total_amount || 0;
+      if (declaredTaxable > 0 && Math.abs(itemsTaxableSum - declaredTaxable) > 1.0) {
+        warnings.push(`Mathematical discrepancy: Sum of line items (₹${itemsTaxableSum.toFixed(2)}) differs from declared taxable amount (₹${declaredTaxable.toFixed(2)}).`);
+      }
     }
 
-    const calculatedTotal = itemsTaxableSum - (extractedJson.discount || 0) + (extractedJson.cgst || 0) + (extractedJson.sgst || 0) + (extractedJson.igst || 0) + (extractedJson.cess || 0) + (extractedJson.round_off || 0);
-    const declaredTotal = extractedJson.total_amount || 0;
-    if (declaredTotal > 0 && Math.abs(calculatedTotal - declaredTotal) > 1.0) {
-      totalDiscrepancyPct = Math.abs(calculatedTotal - declaredTotal) / declaredTotal;
-      warnings.push(`Total discrepancy: Calculated total (₹${calculatedTotal.toFixed(2)}) differs from invoice grand total (₹${declaredTotal.toFixed(2)}).`);
-    }
+    if (reconciliation.mode === "unresolved") totalDiscrepancyPct = reconciliation.discrepancy_pct;
+    reconciliation.warnings.forEach(w => { if (!warnings.includes(w)) warnings.push(w); });
   }
 
   // STAGE 7: Field-Level Validation Status Assignment & Dynamic Quality Confidence
@@ -1164,8 +1220,10 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
       grand_total: extractedJson.total_amount
     },
     line_items: uiProducts,
+    reconciliation,
     missing_fields,
     warnings,
+    ...(aiFailure && { ai_failure: aiFailure }),
     debug: debugInfo
   };
 

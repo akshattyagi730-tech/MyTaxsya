@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Business from "../models/Business.js";
 import Customer from "../models/Customer.js";
 import Expense from "../models/Expense.js";
@@ -9,6 +10,15 @@ import PurchaseBill from "../models/PurchaseBill.js";
 import Supplier from "../models/Supplier.js";
 import User from "../models/User.js";
 import { normalizeInvoiceDate } from "../services/extractionEngine.js";
+import {
+  HttpError,
+  exactMatchCI,
+  sanitizeWriteBody,
+  buildListFilters,
+  parseSort,
+  parsePagination,
+  statusFor,
+} from "../utils/entityGuard.js";
 
 const models = {
   Business,
@@ -45,7 +55,66 @@ const getModel = (entityName) => {
   return key ? models[key] : null;
 };
 
-// Duplicate prevention validation
+// --- Users --------------------------------------------------------------------
+//
+// Users are not ordinary owner-scoped records: they hold credentials and roles.
+// Reads never include secrets, creation/deletion go through /auth (register,
+// invite), and the only field a client may edit here is the display name.
+// Role changes are deliberately not possible through this API.
+
+const USER_SAFE_SELECT = "-password -refresh_token";
+const USER_SORT_FIELDS = ["created_date", "updated_date", "full_name", "email", "role"];
+const USER_WRITABLE_FIELDS = ["full_name"];
+
+const canAccessUser = (req, id) => req.user.role === "admin" || String(req.user.id) === String(id);
+
+const listUsers = async (req, res) => {
+  const sortOption = parseSort(User, req.query.sort, USER_SORT_FIELDS);
+  const { limit, skip } = parsePagination(req.query);
+  // Filters are ignored for users; a non-admin only ever sees themselves.
+  const query = req.user.role === "admin" ? {} : { _id: req.user.id };
+  const users = await User.find(query).select(USER_SAFE_SELECT).sort(sortOption).limit(limit).skip(skip);
+  res.json(users);
+};
+
+const getUser = async (req, res) => {
+  const { id } = req.params;
+  if (!canAccessUser(req, id)) return res.status(403).json({ error: "Access denied" });
+  if (!mongoose.isValidObjectId(id)) return res.status(404).json({ error: "User not found" });
+  const user = await User.findById(id).select(USER_SAFE_SELECT);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  res.json(user);
+};
+
+const updateUser = async (req, res) => {
+  const { id } = req.params;
+  if (!canAccessUser(req, id)) return res.status(403).json({ error: "Access denied" });
+  if (!mongoose.isValidObjectId(id)) return res.status(404).json({ error: "User not found" });
+
+  const body = sanitizeWriteBody(req.body);
+  const updates = {};
+  for (const field of USER_WRITABLE_FIELDS) {
+    if (body[field] === undefined) continue;
+    if (typeof body[field] !== "string" || body[field].length > 100) {
+      throw new HttpError(400, `Invalid value for "${field}"`);
+    }
+    updates[field] = body[field].trim();
+  }
+  if (Object.keys(updates).length === 0) {
+    throw new HttpError(400, `Only these fields can be updated: ${USER_WRITABLE_FIELDS.join(", ")}`);
+  }
+
+  const user = await User.findByIdAndUpdate(id, updates, { new: true, runValidators: true }).select(USER_SAFE_SELECT);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  res.json(user);
+};
+
+// --- Duplicate prevention -------------------------------------------------------
+
+// Values used in equality checks must be plain text/numbers; an object here would
+// be interpreted by MongoDB as a query operator.
+const asText = (value) => (typeof value === "string" || typeof value === "number" ? String(value) : "");
+
 const checkDuplicates = async (Model, body, userEmail, excludeId = null) => {
   const query = { created_by: userEmail };
   if (excludeId) {
@@ -53,45 +122,49 @@ const checkDuplicates = async (Model, body, userEmail, excludeId = null) => {
   }
 
   if (Model.modelName === "Invoice") {
-    if (body.invoice_number) {
-      query.invoice_number = body.invoice_number;
+    const invoiceNumber = asText(body.invoice_number);
+    if (invoiceNumber) {
+      query.invoice_number = invoiceNumber;
       const count = await Model.countDocuments(query);
-      if (count > 0) throw new Error(`Invoice number "${body.invoice_number}" already exists`);
+      if (count > 0) throw new Error(`Invoice number "${invoiceNumber}" already exists`);
     }
   } else if (Model.modelName === "Customer") {
-    if (body.name) {
-      query.name = { $regex: new RegExp(`^${body.name.trim()}$`, "i") };
+    if (asText(body.name).trim()) {
+      query.name = exactMatchCI(body.name);
       const count = await Model.countDocuments(query);
       if (count > 0) throw new Error(`Customer "${body.name}" already exists`);
     }
   } else if (Model.modelName === "Supplier") {
-    if (body.name) {
-      query.name = { $regex: new RegExp(`^${body.name.trim()}$`, "i") };
+    if (asText(body.name).trim()) {
+      query.name = exactMatchCI(body.name);
       const count = await Model.countDocuments(query);
       if (count > 0) throw new Error(`Supplier "${body.name}" already exists`);
     }
   } else if (Model.modelName === "Product") {
-    if (body.sku) {
-      query.sku = body.sku;
+    const sku = asText(body.sku);
+    if (sku) {
+      query.sku = sku;
       const count = await Model.countDocuments(query);
-      if (count > 0) throw new Error(`Product SKU "${body.sku}" already exists`);
-    } else if (body.name) {
-      query.name = { $regex: new RegExp(`^${body.name.trim()}$`, "i") };
+      if (count > 0) throw new Error(`Product SKU "${sku}" already exists`);
+    } else if (asText(body.name).trim()) {
+      query.name = exactMatchCI(body.name);
       const count = await Model.countDocuments(query);
       if (count > 0) throw new Error(`Product name "${body.name}" already exists`);
     }
   } else if (Model.modelName === "Payment") {
-    if (body.payment_number) {
-      query.payment_number = body.payment_number;
+    const paymentNumber = asText(body.payment_number);
+    if (paymentNumber) {
+      query.payment_number = paymentNumber;
       const count = await Model.countDocuments(query);
-      if (count > 0) throw new Error(`Payment number "${body.payment_number}" already exists`);
+      if (count > 0) throw new Error(`Payment number "${paymentNumber}" already exists`);
     }
   } else if (Model.modelName === "PurchaseBill") {
-    if (body.bill_number && body.supplier_name) {
-      query.bill_number = body.bill_number;
-      query.supplier_name = { $regex: new RegExp(`^${body.supplier_name.trim()}$`, "i") };
+    const billNumber = asText(body.bill_number);
+    if (billNumber && asText(body.supplier_name).trim()) {
+      query.bill_number = billNumber;
+      query.supplier_name = exactMatchCI(body.supplier_name);
       const count = await Model.countDocuments(query);
-      if (count > 0) throw new Error(`Bill number "${body.bill_number}" already exists for supplier "${body.supplier_name}"`);
+      if (count > 0) throw new Error(`Bill number "${billNumber}" already exists for supplier "${body.supplier_name}"`);
     }
   }
 };
@@ -116,7 +189,6 @@ const adjustInventoryStock = async (items, multiplier, preventNegative = false) 
 
 export const listEntities = async (req, res) => {
   const { entityName } = req.params;
-  const { sort, limit = 200, skip = 0, ...filters } = req.query;
 
   const Model = getModel(entityName);
   if (!Model) {
@@ -124,33 +196,20 @@ export const listEntities = async (req, res) => {
   }
 
   try {
-    let query = {};
-
     if (Model.modelName === "User") {
-      if (req.user.role !== "admin") {
-        query = { _id: req.user.id };
-      }
-    } else {
-      query.created_by = req.user.email;
+      return await listUsers(req, res);
     }
 
-    Object.keys(filters).forEach(key => {
-      query[key] = filters[key];
-    });
-
-    let sortOption = {};
-    if (sort) {
-      const isDesc = sort.startsWith("-");
-      const field = isDesc ? sort.substring(1) : sort;
-      sortOption[field] = isDesc ? -1 : 1;
-    } else {
-      sortOption["created_date"] = -1;
-    }
+    const filters = buildListFilters(Model, req.query);
+    const sortOption = parseSort(Model, req.query.sort);
+    const { limit, skip } = parsePagination(req.query);
+    // The owner scope is applied last so nothing the client sent can override it.
+    const query = { ...filters, created_by: req.user.email };
 
     const items = await Model.find(query)
       .sort(sortOption)
-      .limit(Number(limit))
-      .skip(Number(skip));
+      .limit(limit)
+      .skip(skip);
 
     // Dynamic Outstanding aggregation for listings
     if (Model.modelName === "Customer") {
@@ -186,7 +245,7 @@ export const listEntities = async (req, res) => {
 
     res.json(items);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(statusFor(error)).json({ error: error.message });
   }
 };
 
@@ -199,12 +258,14 @@ export const getEntity = async (req, res) => {
   }
 
   try {
-    let query = { _id: id };
-    if (Model.modelName !== "User") {
-      query.created_by = req.user.email;
-    } else if (req.user.role !== "admin" && req.user.id !== id) {
-      return res.status(403).json({ error: "Access denied" });
+    if (Model.modelName === "User") {
+      return await getUser(req, res);
     }
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(404).json({ error: `${Model.modelName} not found` });
+    }
+
+    const query = { _id: id, created_by: req.user.email };
 
     const item = await Model.findOne(query);
     if (!item) {
@@ -221,14 +282,14 @@ export const getEntity = async (req, res) => {
 
     if (Model.modelName === "Supplier") {
       const obj = item.toJSON();
-      const expenses = await Expense.find({ vendor: { $regex: new RegExp(`^${item.name}$`, "i") }, created_by: req.user.email, status: "pending" });
+      const expenses = await Expense.find({ vendor: exactMatchCI(item.name), created_by: req.user.email, status: "pending" });
       obj.outstanding_amount = expenses.reduce((s, e) => s + e.amount, 0);
       return res.json(obj);
     }
 
     res.json(item);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(statusFor(error)).json({ error: error.message });
   }
 };
 
@@ -240,7 +301,15 @@ export const createEntity = async (req, res) => {
     return res.status(400).json({ error: `Invalid entity: ${entityName}` });
   }
 
+  if (Model.modelName === "User") {
+    return res.status(403).json({ error: "Users are created through sign-up or team invitations, not this endpoint" });
+  }
+
   try {
+    // Strip server-controlled fields (created_by, ids, timestamps) and reject
+    // update operators before anything reads the body.
+    req.body = Array.isArray(req.body) ? req.body.map(sanitizeWriteBody) : sanitizeWriteBody(req.body);
+
     // 1. Run duplicates prevention
     if (Array.isArray(req.body)) {
       for (const item of req.body) {
@@ -286,9 +355,7 @@ export const createEntity = async (req, res) => {
     if (Array.isArray(req.body)) {
       const data = req.body.map(item => {
         const mapped = { ...item };
-        if (Model.modelName !== "User") {
-          mapped.created_by = req.user.email;
-        }
+        mapped.created_by = req.user.email;
         if (Model.modelName === "Invoice") {
           if (!mapped.invoice_date_raw && mapped.invoice_date) {
             mapped.invoice_date_raw = String(mapped.invoice_date);
@@ -309,9 +376,7 @@ export const createEntity = async (req, res) => {
       result = await Model.create(data);
     } else {
       const data = { ...req.body };
-      if (Model.modelName !== "User") {
-        data.created_by = req.user.email;
-      }
+      data.created_by = req.user.email;
       if (Model.modelName === "Invoice") {
         if (!data.invoice_date_raw && data.invoice_date) {
           data.invoice_date_raw = String(data.invoice_date);
@@ -331,7 +396,7 @@ export const createEntity = async (req, res) => {
     }
     res.status(201).json(result);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(statusFor(error, 400)).json({ error: error.message });
   }
 };
 
@@ -344,12 +409,17 @@ export const updateEntity = async (req, res) => {
   }
 
   try {
-    let query = { _id: id };
-    if (Model.modelName !== "User") {
-      query.created_by = req.user.email;
-    } else if (req.user.role !== "admin" && req.user.id !== id) {
-      return res.status(403).json({ error: "Access denied" });
+    if (Model.modelName === "User") {
+      return await updateUser(req, res);
     }
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(404).json({ error: `${Model.modelName} not found or unauthorized` });
+    }
+
+    // Same rules as create: no ownership/id changes, no update operators.
+    req.body = sanitizeWriteBody(req.body);
+
+    const query = { _id: id, created_by: req.user.email };
 
     // 1. Run duplicates prevention
     await checkDuplicates(Model, req.body, req.user.email, id);
@@ -451,7 +521,7 @@ export const updateEntity = async (req, res) => {
 
     res.json(item);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(statusFor(error, 400)).json({ error: error.message });
   }
 };
 
@@ -463,15 +533,13 @@ export const deleteEntity = async (req, res) => {
     return res.status(400).json({ error: `Invalid entity: ${entityName}` });
   }
 
+  if (Model.modelName === "User") {
+    return res.status(403).json({ error: "Users cannot be deleted through this endpoint" });
+  }
+
   if (id === "all") {
     try {
-      let query = {};
-      if (Model.modelName !== "User") {
-        query.created_by = req.user.email;
-      } else {
-        return res.status(403).json({ error: "Access denied" });
-      }
-      await Model.deleteMany(query);
+      await Model.deleteMany({ created_by: req.user.email });
       return res.json({ success: true, message: `All ${Model.modelName}s deleted successfully` });
     } catch (error) {
       return res.status(500).json({ error: error.message });
@@ -479,12 +547,11 @@ export const deleteEntity = async (req, res) => {
   }
 
   try {
-    let query = { _id: id };
-    if (Model.modelName !== "User") {
-      query.created_by = req.user.email;
-    } else if (req.user.role !== "admin") {
-      return res.status(403).json({ error: "Access denied" });
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(404).json({ error: `${Model.modelName} not found or unauthorized` });
     }
+
+    const query = { _id: id, created_by: req.user.email };
 
     // 1. Revert inventory stock adjustments on active Sales Invoice deletion
     if (Model.modelName === "Invoice") {

@@ -35,9 +35,11 @@ Deploy the backend first, as the frontend needs the backend URL for its configur
 | :--- | :--- |
 | `NODE_ENV` | Set to `production` |
 | `MONGODB_URI` | Your MongoDB Atlas connection string |
-| `JWT_SECRET` | Secret key for generating JWT access tokens |
-| `JWT_REFRESH_SECRET` | Secret key for generating JWT refresh tokens |
+| `JWT_SECRET` | Random secret for JWT access tokens, **at least 32 characters** (the server refuses to start in production otherwise) |
+| `JWT_REFRESH_SECRET` | Random secret for JWT refresh tokens, at least 32 characters and **different from `JWT_SECRET`** |
 | `FRONTEND_URL` | The URL of your deployed frontend (e.g. `https://your-app.vercel.app`) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | SMTP account used to send sign-up verification codes, password-reset links and team invites. **Required in production**: without it sign-up fails with a 503 |
+| `EMAIL_FROM` | Sender shown on those emails, e.g. `My Taxsya <no-reply@yourdomain.com>` (defaults to `SMTP_USER`) |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
 | `GOOGLE_REDIRECT_URI` | Google OAuth Redirect Callback URI (e.g. `https://your-backend.onrender.com/api/auth/google/callback`) |

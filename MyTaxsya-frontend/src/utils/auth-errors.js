@@ -4,7 +4,13 @@ export function translateAuthError(error) {
   // Base44 SDK error format often includes .status
   const status = error.status || (error.response && error.response.status);
   const message = error.message || "";
-  
+
+  // The server words these itself (e.g. "We could not send the email right now"),
+  // so show that instead of the generic status-based text below.
+  if (error.data?.code === "EMAIL_UNAVAILABLE" || error.data?.code === "RATE_LIMITED") {
+    return message;
+  }
+
   if (status === 401) {
     return "Invalid email or password";
   }

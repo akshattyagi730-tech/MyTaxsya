@@ -200,7 +200,8 @@ export default function Register() {
               id="password"
               type="password"
               autoComplete="new-password"
-              placeholder="••••••••"
+              placeholder="At least 8 characters"
+              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="pl-10 h-12"

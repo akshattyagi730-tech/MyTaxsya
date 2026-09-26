@@ -5,8 +5,8 @@ import Customer from '../models/Customer.js';
 import User from '../models/User.js';
 
 const API_URL = 'http://localhost:5001/api';
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://bharatsheyoran69_db_user:r1pUdSVhYO4RlNQB@cluster0.d1fpbmw.mongodb.net/?appName=Cluster0";
-const JWT_SECRET = process.env.JWT_SECRET || "2d4d3c1a9f4f8c8b5e7a6d1c9a3b7f2e8c4d6a1b9e3f5c7d8a2b4e6f8c1d3a5";
+const MONGODB_URI = process.env.MONGODB_URI;
+const JWT_SECRET = process.env.JWT_SECRET;
 
 async function verifyAiImporter() {
   try {

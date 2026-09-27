@@ -27,11 +27,11 @@ export default function Header({ onMenuClick }) {
           <Menu className="w-5 h-5" />
         </Button>
 
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <div className="group relative flex-1 max-w-md focus-within:max-w-lg transition-all duration-300 ease-out">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground transition-all duration-300 group-focus-within:text-accent group-focus-within:scale-110" />
           <Input
             placeholder="Search invoices, customers..."
-            className="pl-9 h-10 bg-muted/50 border-0 focus-visible:ring-1"
+            className="pl-9 h-10 bg-muted/50 border-0 transition-all duration-300 focus-visible:ring-2 focus-visible:ring-accent focus-visible:bg-card focus-visible:shadow-md"
           />
         </div>
 

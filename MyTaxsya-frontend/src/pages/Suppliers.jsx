@@ -49,9 +49,11 @@ export default function Suppliers() {
   return (
     <div className="max-w-[1400px] mx-auto">
       <PageHeader title="Suppliers" subtitle={`${items.length} total suppliers`}>
-        <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
-          <Plus className="w-4 h-4" /> Add Supplier
-        </Button>
+        <span className="cta-glow">
+          <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
+            <Plus className="w-4 h-4" /> Add Supplier
+          </Button>
+        </span>
       </PageHeader>
 
       <DataTable

@@ -1,8 +1,10 @@
 import React from "react";
+import AuthSplash from "@/components/AuthSplash";
 
 export default function AuthLayout({ icon: Icon, title, subtitle, footer, children }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <AuthSplash />
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img src="/logo.png" alt="My Taxsya Logo" className="w-16 h-16 mx-auto mb-4 object-contain rounded-xl shadow-sm border border-border bg-card p-1" />

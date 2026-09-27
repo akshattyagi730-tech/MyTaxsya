@@ -9,13 +9,13 @@ export default function AuthSplash() {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => setVisible(false), 2100);
+    const timer = setTimeout(() => setVisible(false), 3200);
     return () => clearTimeout(timer);
   }, []);
 
   if (!visible) return null;
 
-  const tearTransition = { delay: 1.05, duration: 0.85, ease: [0.76, 0, 0.24, 1] };
+  const tearTransition = { delay: 1.9, duration: 1.05, ease: [0.76, 0, 0.24, 1] };
 
   return (
     <div className="fixed inset-0 z-[100] pointer-events-none overflow-hidden">
@@ -47,10 +47,10 @@ export default function AuthSplash() {
       <motion.img
         src="/logo.png"
         alt="My Taxsya"
-        className="absolute top-1/2 left-1/2 w-28 h-28 sm:w-36 sm:h-36 object-contain rounded-[28%] shadow-xl"
+        className="absolute top-1/2 left-1/2 w-44 h-44 sm:w-60 sm:h-60 object-contain rounded-[28%] shadow-xl"
         initial={{ opacity: 0, scale: 0.7, x: '-50%', y: '-50%' }}
         animate={{ opacity: [0, 1, 1, 0], scale: [0.7, 1, 1, 0.85], x: '-50%', y: '-50%' }}
-        transition={{ duration: 1.2, times: [0, 0.3, 0.78, 1], ease: 'easeInOut' }}
+        transition={{ duration: 2.3, times: [0, 0.22, 0.72, 1], ease: 'easeInOut' }}
       />
     </div>
   );

@@ -129,6 +129,15 @@
     @apply bg-background text-foreground font-body antialiased;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* App-like feel: text isn't selectable/editable by default, so the
+       cursor stays a normal pointer instead of the text (I-beam) cursor. */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input, textarea, [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   ::-webkit-scrollbar {

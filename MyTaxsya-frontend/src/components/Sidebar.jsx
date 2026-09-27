@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, Package, Truck, Boxes,
   Wallet, Receipt, ShoppingBag, BookOpen, Landmark, BarChart3, TrendingUp,
-  Bot, Bell, UserCog, Settings as SettingsIcon,
+  UserCog, Settings as SettingsIcon,
 } from 'lucide-react';
 
 const navSections = [
@@ -36,13 +36,11 @@ const navSections = [
     items: [
       { label: 'Reports', path: '/reports', icon: BarChart3 },
       { label: 'Analytics', path: '/analytics', icon: TrendingUp },
-      { label: 'AI Assistant', path: '/assistant', icon: Bot },
     ],
   },
   {
     label: 'Administration',
     items: [
-      { label: 'Notifications', path: '/notifications', icon: Bell },
       { label: 'Team', path: '/team', icon: UserCog },
       { label: 'Settings', path: '/settings', icon: SettingsIcon },
     ],

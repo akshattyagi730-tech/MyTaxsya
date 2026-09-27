@@ -10,7 +10,7 @@ import {
   parseSort,
   sanitizeWriteBody,
 } from "../../utils/entityGuard.js";
-import { assertProductionEnv, getFrontendOrigin } from "../../config/env.js";
+import { assertProductionEnv, getAllowedOrigins, getFrontendOrigin, isOriginAllowed } from "../../config/env.js";
 
 const VALID_ID = "64b7f0c2a1b2c3d4e5f60718";
 
@@ -117,5 +117,40 @@ test("getFrontendOrigin uses only the first of several comma-separated origins",
     assert.equal(getFrontendOrigin(), "https://app.example.com");
   } finally {
     if (saved === undefined) delete process.env.FRONTEND_URL; else process.env.FRONTEND_URL = saved;
+  }
+});
+
+test("FRONTEND_URL entries are normalised: a trailing slash must not break CORS", () => {
+  const saved = { url: process.env.FRONTEND_URL, env: process.env.NODE_ENV };
+  try {
+    process.env.NODE_ENV = "production";
+    // The exact mistake that locked users out: URL pasted with a trailing slash.
+    process.env.FRONTEND_URL = "https://mytaxsya-ecru.vercel.app/";
+    assert.deepEqual(getAllowedOrigins(), ["https://mytaxsya-ecru.vercel.app"]);
+    assert.equal(isOriginAllowed("https://mytaxsya-ecru.vercel.app"), true, "browser Origin has no trailing slash");
+    assert.equal(getFrontendOrigin(), "https://mytaxsya-ecru.vercel.app", "redirects must not become //login");
+
+    process.env.FRONTEND_URL = " https://a.example.com// , https://b.example.com ,, ";
+    assert.deepEqual(getAllowedOrigins(), ["https://a.example.com", "https://b.example.com"]);
+    assert.equal(isOriginAllowed("https://b.example.com"), true);
+  } finally {
+    if (saved.url === undefined) delete process.env.FRONTEND_URL; else process.env.FRONTEND_URL = saved.url;
+    if (saved.env === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = saved.env;
+  }
+});
+
+test("production CORS is strict, development and origin-less requests are open", () => {
+  const saved = { url: process.env.FRONTEND_URL, env: process.env.NODE_ENV };
+  try {
+    process.env.FRONTEND_URL = "https://mytaxsya-ecru.vercel.app";
+    process.env.NODE_ENV = "production";
+    assert.equal(isOriginAllowed("https://evil.example.com"), false);
+    assert.equal(isOriginAllowed("https://mytaxsya-ecru.vercel.app.evil.com"), false, "no prefix matching");
+    assert.equal(isOriginAllowed(undefined), true, "health checks and curl send no Origin");
+    process.env.NODE_ENV = "development";
+    assert.equal(isOriginAllowed("https://evil.example.com"), true);
+  } finally {
+    if (saved.url === undefined) delete process.env.FRONTEND_URL; else process.env.FRONTEND_URL = saved.url;
+    if (saved.env === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = saved.env;
   }
 });

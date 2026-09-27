@@ -31,9 +31,21 @@ export const getAccessSecret = () => readSecret("JWT_SECRET");
 export const getRefreshSecret = () => readSecret("JWT_REFRESH_SECRET");
 
 // FRONTEND_URL may hold several comma-separated origins (it doubles as the CORS
-// allow-list); links sent in emails must use just one of them.
-export const getFrontendOrigin = () =>
-  (process.env.FRONTEND_URL || "http://localhost:5175").split(",")[0].trim().replace(/\/$/, "");
+// allow-list). Trailing slashes are dropped: a browser's Origin header never has one,
+// so "https://app.example.com/" pasted into the dashboard would otherwise match nothing
+// and silently block every API call from the site.
+export const getAllowedOrigins = () =>
+  (process.env.FRONTEND_URL || "http://localhost:5175")
+    .split(",")
+    .map((url) => url.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+
+// Links sent in emails and redirects after Google sign-in use just the first one.
+export const getFrontendOrigin = () => getAllowedOrigins()[0];
+
+/** CORS decision: no Origin (curl, health checks) and non-production are open; production needs an exact match. */
+export const isOriginAllowed = (origin) =>
+  !origin || process.env.NODE_ENV !== "production" || getAllowedOrigins().includes(origin);
 
 /** Fail fast at boot if production is configured with missing or weak secrets. */
 export function assertProductionEnv() {

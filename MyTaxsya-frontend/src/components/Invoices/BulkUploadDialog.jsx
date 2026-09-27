@@ -1362,7 +1362,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <div
             onClick={() => !processing && inputRef.current?.click()}
             className="border-2 border-dashed border-border rounded-lg p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
@@ -1394,15 +1394,15 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
 
           {status && (
             <div className="space-y-2">
-              <div className={`flex items-center justify-between text-sm p-3 rounded-lg ${statusType === 'error' ? 'bg-destructive/10 text-destructive'
+              <div className={`flex items-center justify-between text-sm p-3 rounded-lg min-w-0 ${statusType === 'error' ? 'bg-destructive/10 text-destructive'
                   : statusType === 'success' ? 'bg-secondary/10 text-secondary'
                     : 'bg-muted text-muted-foreground'
                 }`}>
-                <div className="flex items-start gap-2 flex-1">
+                <div className="flex items-start gap-2 flex-1 min-w-0">
                   {statusType === 'error' ? <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                     : statusType === 'success' ? <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
                       : <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />}
-                  <span>{status}</span>
+                  <span className="break-words min-w-0">{status}</span>
                 </div>
                 {statusType === 'error' && isRetryable && (
                   <Button

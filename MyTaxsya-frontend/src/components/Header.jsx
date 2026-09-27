@@ -1,5 +1,5 @@
 import {
-  Search, Bell, Sun, Moon, LogOut, User as UserIcon, Settings, Menu,
+  Search, Bell, Sun, Moon, LogOut, User as UserIcon, Menu,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from './ThemeProvider';
@@ -65,7 +65,6 @@ export default function Header({ onMenuClick }) {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate('/settings')}><UserIcon className="w-4 h-4 mr-2" /> Profile</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/settings')}><Settings className="w-4 h-4 mr-2" /> Settings</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => logout()} className="text-destructive">
                 <LogOut className="w-4 h-4 mr-2" /> Sign out

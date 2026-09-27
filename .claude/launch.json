@@ -4,13 +4,13 @@
     {
       "name": "backend",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /Users/akshat/MyTaxsya/MyTaxsya-backend && npm run dev"],
+      "runtimeArgs": ["-c", "cd MyTaxsya-backend && npm run dev"],
       "port": 5001
     },
     {
       "name": "frontend",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /Users/akshat/MyTaxsya/MyTaxsya-frontend && npm run dev"],
+      "runtimeArgs": ["-c", "cd MyTaxsya-frontend && npm run dev"],
       "port": 5175
     }
   ]

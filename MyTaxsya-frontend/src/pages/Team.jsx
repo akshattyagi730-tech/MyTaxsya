@@ -70,9 +70,11 @@ export default function Team() {
   return (
     <div className="max-w-[1000px] mx-auto">
       <PageHeader title="Team Management" subtitle={`${users.length} team members`}>
-        <Button className="gap-2" onClick={() => setInviteOpen(true)}>
-          <UserPlus className="w-4 h-4" /> Invite Member
-        </Button>
+        <span className="cta-glow">
+          <Button className="gap-2" onClick={() => setInviteOpen(true)}>
+            <UserPlus className="w-4 h-4" /> Invite Member
+          </Button>
+        </span>
       </PageHeader>
 
       {users.length === 0 ? (

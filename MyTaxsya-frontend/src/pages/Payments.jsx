@@ -168,9 +168,11 @@ export default function Payments() {
   return (
     <div className="max-w-[1400px] mx-auto">
       <PageHeader title="Payments" subtitle={`${items.length} total payments`}>
-        <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
-          <Plus className="w-4 h-4" /> Record Payment
-        </Button>
+        <span className="cta-glow">
+          <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
+            <Plus className="w-4 h-4" /> Record Payment
+          </Button>
+        </span>
       </PageHeader>
 
       <DataTable

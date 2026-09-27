@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, Package, Truck, Boxes,
   Wallet, Receipt, ShoppingBag, BookOpen, Landmark, BarChart3, TrendingUp,
@@ -48,6 +49,17 @@ const navSections = [
   },
 ];
 
+// Flat running index across every section, so the whole sidebar cascades
+// in on mount as one continuous stagger instead of resetting per section.
+let __itemCounter = 0;
+navSections.forEach((section) => {
+  section.items.forEach((item) => {
+    item.__i = __itemCounter++;
+  });
+});
+
+const MotionLink = motion(Link);
+
 export default function Sidebar({ open, onClose }) {
   const location = useLocation();
 
@@ -61,7 +73,7 @@ export default function Sidebar({ open, onClose }) {
         ${open ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex items-center gap-3 px-5 h-16 border-b border-sidebar-border">
-          <img src="/logo.png" alt="My Taxsya Logo" className="w-9 h-9 object-contain rounded-md bg-card p-0.5" />
+          <img src="/logo.png" alt="My Taxsya Logo" className="w-9 h-9 object-contain rounded-xl bg-card p-0.5" />
           <div>
             <p className="font-heading font-bold text-[15px] leading-tight text-sidebar-foreground">My Taxsya</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider">GST & Accounting</p>
@@ -78,15 +90,38 @@ export default function Sidebar({ open, onClose }) {
                 {section.items.map((item) => {
                   const isActive = location.pathname === item.path;
                   return (
-                    <Link key={item.path} to={item.path} onClick={onClose} className={`
-                      flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all
-                      ${isActive
-                        ? 'bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm'
-                        : 'text-sidebar-foreground hover:bg-sidebar-accent'}
-                    `}>
-                      <item.icon className="w-[18px] h-[18px]" />
-                      <span>{item.label}</span>
-                    </Link>
+                    <MotionLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={onClose}
+                      initial={{ opacity: 0, x: -16 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: item.__i * 0.04, type: 'spring', stiffness: 260, damping: 20 }}
+                      whileHover={{ x: 5 }}
+                      whileTap={{ scale: 0.96 }}
+                      className={`
+                        relative flex items-center gap-3 px-3 py-2 rounded-full text-sm overflow-hidden
+                        ${isActive
+                          ? 'text-sidebar-primary-foreground font-medium'
+                          : 'text-sidebar-foreground hover:bg-sidebar-accent transition-colors'}
+                      `}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="sidebar-active-pill"
+                          className="absolute inset-0 rounded-full bg-sidebar-primary shadow-sm"
+                          transition={{ type: 'spring', stiffness: 220, damping: 18 }}
+                        />
+                      )}
+                      <motion.span
+                        className="relative z-10 flex items-center justify-center"
+                        whileHover={{ rotate: [0, -16, 13, -9, 5, 0], scale: 1.2 }}
+                        transition={{ duration: 0.6, ease: 'easeInOut' }}
+                      >
+                        <item.icon className="w-[18px] h-[18px]" />
+                      </motion.span>
+                      <span className="relative z-10">{item.label}</span>
+                    </MotionLink>
                   );
                 })}
               </div>

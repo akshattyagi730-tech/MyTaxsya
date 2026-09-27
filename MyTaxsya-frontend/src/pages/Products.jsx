@@ -55,9 +55,11 @@ export default function Products() {
   return (
     <div className="max-w-[1400px] mx-auto">
       <PageHeader title="Products" subtitle={`${items.length} total products`}>
-        <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
-          <Plus className="w-4 h-4" /> Add Product
-        </Button>
+        <span className="cta-glow">
+          <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
+            <Plus className="w-4 h-4" /> Add Product
+          </Button>
+        </span>
       </PageHeader>
 
       <DataTable

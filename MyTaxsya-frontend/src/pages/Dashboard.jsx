@@ -14,6 +14,14 @@ import {
 import StatCard from '@/components/dashboard/StatCard';
 import { formatINR, formatINRCompact, formatDate } from '@/utils/format';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
+
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+};
 
 const statusStyles = {
   draft: 'bg-muted text-muted-foreground',
@@ -42,6 +50,8 @@ const computeTrend = (current, previous) => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const displayName = user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'there';
   const [data, setData] = useState({ invoices: [], customers: [], products: [], expenses: [], payments: [] });
   const [loading, setLoading] = useState(true);
 
@@ -277,20 +287,29 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-10">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+
+      <div
+        className="relative overflow-hidden rounded-3xl border border-border p-6 sm:p-8 flex items-center justify-between flex-wrap gap-4"
+        style={{ background: 'linear-gradient(120deg, hsl(var(--accent) / 0.14), hsl(var(--background)))' }}
+      >
+        <div aria-hidden className="pointer-events-none absolute -right-10 -top-16 w-48 h-48 rounded-full bg-accent/10" />
+        <div aria-hidden className="pointer-events-none absolute right-20 -bottom-16 w-36 h-36 rounded-full bg-secondary/10" />
+
+        <div className="relative z-10">
+          <h1 className="font-heading text-2xl font-extrabold tracking-tight">{getGreeting()}, {displayName}</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Here's how your business looked today &middot; {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={loadData} title="Refresh dashboard">
+        <div className="relative z-10 flex items-center gap-2">
+          <Button size="icon" onClick={loadData} title="Refresh dashboard" className="bg-accent text-accent-foreground border-0 hover:bg-accent/90">
             <RefreshCw className="w-4 h-4" />
           </Button>
-          <Button className="gap-2" onClick={() => navigate('/invoices')}>
-            <Plus className="w-4 h-4" /> Create Invoice
-          </Button>
+          <span className="cta-glow">
+            <Button className="gap-2" onClick={() => navigate('/invoices')}>
+              <Plus className="w-4 h-4" /> Create Invoice
+            </Button>
+          </span>
         </div>
       </div>
 
@@ -451,18 +470,35 @@ export default function Dashboard() {
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
               className="bg-card border border-border rounded-xl p-5">
               <h2 className="font-heading font-semibold text-lg mb-4">Top Customers</h2>
-              <div className="space-y-3">
+              <div className="space-y-1">
                 {topCustomers.map(([name, amount], i) => (
-                  <div key={name} className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-xs font-medium">
+                  <motion.div
+                    key={name}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.06, duration: 0.3 }}
+                    whileHover={{ x: 4 }}
+                    className="group relative flex items-center gap-3 rounded-lg -mx-2 px-2 py-1.5 overflow-hidden cursor-default"
+                  >
+                    <motion.span
+                      initial={{ scaleY: 0 }}
+                      whileHover={{ scaleY: 1 }}
+                      transition={{ duration: 0.25 }}
+                      className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-primary to-secondary"
+                    />
+                    <motion.div
+                      whileHover={{ scale: 1.15, rotate: -8 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 12 }}
+                      className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-xs font-medium shrink-0"
+                    >
                       {name.slice(0, 2).toUpperCase()}
-                    </div>
+                    </motion.div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{name}</p>
                       <p className="text-xs text-muted-foreground">{formatINR(amount)}</p>
                     </div>
-                    <span className="text-xs text-muted-foreground">#{i + 1}</span>
-                  </div>
+                    <span className="text-xs font-semibold text-muted-foreground group-hover:text-primary transition-colors shrink-0">#{i + 1}</span>
+                  </motion.div>
                 ))}
               </div>
             </motion.div>
@@ -473,18 +509,35 @@ export default function Dashboard() {
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
               className="bg-card border border-border rounded-xl p-5">
               <h2 className="font-heading font-semibold text-lg mb-4">Top Products</h2>
-              <div className="space-y-3">
+              <div className="space-y-1">
                 {topProducts.map(([name, amount], i) => (
-                  <div key={name} className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-xs font-medium">
+                  <motion.div
+                    key={name}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.06, duration: 0.3 }}
+                    whileHover={{ x: 4 }}
+                    className="group relative flex items-center gap-3 rounded-lg -mx-2 px-2 py-1.5 overflow-hidden cursor-default"
+                  >
+                    <motion.span
+                      initial={{ scaleY: 0 }}
+                      whileHover={{ scaleY: 1 }}
+                      transition={{ duration: 0.25 }}
+                      className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-primary to-secondary"
+                    />
+                    <motion.div
+                      whileHover={{ scale: 1.15, rotate: -8 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 12 }}
+                      className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-xs font-medium shrink-0"
+                    >
                       <Package className="w-4 h-4 text-white" />
-                    </div>
+                    </motion.div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{name}</p>
                       <p className="text-xs text-muted-foreground">{formatINR(amount)}</p>
                     </div>
-                    <span className="text-xs text-muted-foreground">#{i + 1}</span>
-                  </div>
+                    <span className="text-xs font-semibold text-muted-foreground group-hover:text-primary transition-colors shrink-0">#{i + 1}</span>
+                  </motion.div>
                 ))}
               </div>
             </motion.div>

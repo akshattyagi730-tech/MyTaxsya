@@ -48,9 +48,11 @@ export default function Customers() {
   return (
     <div className="max-w-[1400px] mx-auto">
       <PageHeader title="Customers" subtitle={`${items.length} total customers`}>
-        <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
-          <Plus className="w-4 h-4" /> Add Customer
-        </Button>
+        <span className="cta-glow">
+          <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
+            <Plus className="w-4 h-4" /> Add Customer
+          </Button>
+        </span>
       </PageHeader>
 
       <DataTable

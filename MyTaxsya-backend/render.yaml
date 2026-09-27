@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: taxsetu-backend
+    name: mytaxsya-backend
     env: node
     plan: free
     buildCommand: npm install

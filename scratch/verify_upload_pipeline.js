@@ -1,11 +1,11 @@
 import http from "http";
-import AdmZip from "../taxsetu-backend/node_modules/adm-zip/adm-zip.js";
-import jwt from "../taxsetu-backend/node_modules/jsonwebtoken/index.js";
+import AdmZip from "../MyTaxsya-backend/node_modules/adm-zip/adm-zip.js";
+import jwt from "../MyTaxsya-backend/node_modules/jsonwebtoken/index.js";
 
-import mongoose from "../taxsetu-backend/node_modules/mongoose/index.js";
-import User from "../taxsetu-backend/models/User.js";
+import mongoose from "../MyTaxsya-backend/node_modules/mongoose/index.js";
+import User from "../MyTaxsya-backend/models/User.js";
 
-console.log("=== VERIFYING TAXSETU UPLOAD PIPELINE ===");
+console.log("=== VERIFYING MYTAXSYA UPLOAD PIPELINE ===");
 
 // Create test JWT token with a mock Mongo Object ID
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -20,7 +20,7 @@ const csvBuffer = Buffer.from(sampleCsvText);
 console.log(`Generated sample CSV invoice: ${csvBuffer.length} bytes.`);
 
 // 2. Prepare multipart/form-data request
-const boundary = "----TaxSetuUploadBoundary" + Math.random().toString(36).substring(2);
+const boundary = "----MyTaxsyaUploadBoundary" + Math.random().toString(36).substring(2);
 let body = [];
 
 body.push(Buffer.from(`--${boundary}\r\n`));

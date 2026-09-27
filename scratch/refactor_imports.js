@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const srcDir = '/Users/akshat/TaxSetu/taxsetu-frontend/src';
+const srcDir = '/Users/akshat/MyTaxsya/MyTaxsya-frontend/src';
 
 function walkDir(dir, callback) {
   fs.readdirSync(dir).forEach(f => {

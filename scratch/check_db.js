@@ -1,7 +1,7 @@
-import mongoose from '../taxsetu-backend/node_modules/mongoose/index.js';
-import User from '../taxsetu-backend/models/User.js';
-import Invoice from '../taxsetu-backend/models/Invoice.js';
-import Customer from '../taxsetu-backend/models/Customer.js';
+import mongoose from '../MyTaxsya-backend/node_modules/mongoose/index.js';
+import User from '../MyTaxsya-backend/models/User.js';
+import Invoice from '../MyTaxsya-backend/models/Invoice.js';
+import Customer from '../MyTaxsya-backend/models/Customer.js';
 
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/gst-ai";
 

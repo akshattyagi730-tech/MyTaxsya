@@ -2,9 +2,12 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
+import AssistantFab from '@/components/AssistantFab';
+import AssistantDrawer from '@/components/AssistantDrawer';
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-background">
@@ -15,6 +18,8 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <AssistantFab open={assistantOpen} onClick={() => setAssistantOpen(true)} />
+      <AssistantDrawer open={assistantOpen} onClose={() => setAssistantOpen(false)} />
     </div>
   );
 }

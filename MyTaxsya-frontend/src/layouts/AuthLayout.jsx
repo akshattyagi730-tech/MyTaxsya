@@ -17,6 +17,9 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
         {footer && (
           <p className="text-center text-sm text-muted-foreground mt-6">{footer}</p>
         )}
+        <p className="text-center text-xs text-muted-foreground/70 mt-4">
+          Powered by <span className="font-medium">Stackvane Infotech Pvt Ltd</span>
+        </p>
       </div>
     </div>
   );

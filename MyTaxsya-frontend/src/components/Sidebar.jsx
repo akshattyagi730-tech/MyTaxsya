@@ -67,10 +67,10 @@ export default function Sidebar({ open, onClose }) {
 
       <aside className={`
         fixed top-0 left-0 z-50 h-full w-[260px] bg-sidebar border-r border-sidebar-border
-        transition-transform duration-300 lg:translate-x-0
+        transition-transform duration-300 lg:translate-x-0 flex flex-col
         ${open ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex items-center gap-3 px-5 h-16 border-b border-sidebar-border">
+        <div className="flex items-center gap-3 px-5 h-16 border-b border-sidebar-border flex-shrink-0">
           <img src="/logo.png" alt="My Taxsya Logo" className="w-9 h-9 object-contain rounded-xl bg-card p-0.5" />
           <div>
             <p className="font-heading font-bold text-[15px] leading-tight text-sidebar-foreground">My Taxsya</p>
@@ -78,7 +78,7 @@ export default function Sidebar({ open, onClose }) {
           </div>
         </div>
 
-        <nav className="px-3 py-4 overflow-y-auto h-[calc(100%-4rem)]">
+        <nav className="flex-1 px-3 py-4 overflow-y-auto">
           {navSections.map((section) => (
             <div key={section.label} className="mb-5">
               <p className="px-3 mb-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -126,6 +126,12 @@ export default function Sidebar({ open, onClose }) {
             </div>
           ))}
         </nav>
+
+        <div className="px-4 py-3 border-t border-sidebar-border flex-shrink-0 text-center">
+          <p className="text-[10px] text-muted-foreground">
+            Powered by <span className="font-medium">Stackvane Infotech Pvt Ltd</span>
+          </p>
+        </div>
       </aside>
     </>
   );

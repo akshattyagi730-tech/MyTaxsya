@@ -97,9 +97,11 @@ export default function Invoices() {
           <Button variant="outline" className="gap-2" onClick={() => setBulkOpen(true)}>
             <UploadCloud className="w-4 h-4" /> Upload CSV
           </Button>
-          <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
-            <Plus className="w-4 h-4" /> Create Invoice
-          </Button>
+          <span className="cta-glow">
+            <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
+              <Plus className="w-4 h-4" /> Create Invoice
+            </Button>
+          </span>
         </div>
       </PageHeader>
 

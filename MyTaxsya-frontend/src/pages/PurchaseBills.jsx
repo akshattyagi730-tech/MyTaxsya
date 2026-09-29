@@ -44,9 +44,11 @@ export default function PurchaseBills() {
         <Button variant="outline" className="gap-2" onClick={() => setUploadOpen(true)}>
           <UploadCloud className="w-4 h-4" /> Upload Bill
         </Button>
-        <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
-          <Plus className="w-4 h-4" /> Add Purchase Bill
-        </Button>
+        <span className="cta-glow">
+          <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
+            <Plus className="w-4 h-4" /> Add Purchase Bill
+          </Button>
+        </span>
       </PageHeader>
 
       <DataTable

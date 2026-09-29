@@ -73,9 +73,11 @@ export default function Expenses() {
   return (
     <div className="max-w-[1400px] mx-auto">
       <PageHeader title="Expenses" subtitle={`${items.length} total expenses`}>
-        <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
-          <Plus className="w-4 h-4" /> Add Expense
-        </Button>
+        <span className="cta-glow">
+          <Button className="gap-2" onClick={() => { setEditItem(null); setFormOpen(true); }}>
+            <Plus className="w-4 h-4" /> Add Expense
+          </Button>
+        </span>
       </PageHeader>
 
       <DataTable

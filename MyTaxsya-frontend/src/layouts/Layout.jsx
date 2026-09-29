@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
+import AssistantFab from '@/components/AssistantFab';
+import AssistantDrawer from '@/components/AssistantDrawer';
 
 const COLLAPSE_KEY = 'myTaxsya-sidebar-collapsed';
 
@@ -16,6 +18,7 @@ export default function Layout() {
   useEffect(() => {
     try { localStorage.setItem(COLLAPSE_KEY, String(collapsed)); } catch { /* private mode etc. — not critical */ }
   }, [collapsed]);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-background">
@@ -26,6 +29,8 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <AssistantFab open={assistantOpen} onClick={() => setAssistantOpen(true)} />
+      <AssistantDrawer open={assistantOpen} onClose={() => setAssistantOpen(false)} />
     </div>
   );
 }

@@ -47,6 +47,21 @@ const runLocalOcr = async (buffer) => {
   }
 };
 
+// The image auto-orient step only corrects rotation when the file carries an EXIF
+// orientation tag; a photo with none (common once it's passed through a messaging
+// app, screenshot tool, or been re-saved) stays sideways. Tesseract has no rotation
+// correction of its own, so on a sideways page it returns near-garbage text. Feeding
+// that to Gemini as "extracted context" next to the real image tends to bias it
+// toward the garbage instead of just reading the picture, so only pass the OCR text
+// along when it actually looks like recognizable invoice text.
+const looksLikeUsableOcrText = (text) => {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (trimmed.length < 30) return false;
+  const words = trimmed.split(/\s+/).filter((w) => /[A-Za-z]{3,}/.test(w));
+  return words.length >= 8;
+};
+
 // Helper: Rasterize the first page of a PDF to a JPEG buffer for vision models
 // that require raster image input (they cannot read raw PDF bytes).
 const renderPdfPageToJpeg = async (buffer) => {
@@ -811,7 +826,13 @@ function runWithVisionLock(fn) {
   if (!extractedJson && process.env.GEMINI_API_KEY) {
     diagnostic.ai_extraction.attempted = true;
     try {
-      const prompt = `${groqVisionSchema}\n\nExtracted Document Text Context:\n${extractedText.substring(0, 4000)}`;
+      const usableOcrText = looksLikeUsableOcrText(extractedText) ? extractedText : "";
+      if (extractedText && !usableOcrText) {
+        console.log(`[PIPELINE-STEP 4b] Local OCR text for '${fileName}' looks unreliable (likely a sideways/rotated photo) — sending image to Gemini without it.`);
+      }
+      const prompt = usableOcrText
+        ? `${groqVisionSchema}\n\nExtracted Document Text Context:\n${usableOcrText.substring(0, 4000)}`
+        : groqVisionSchema;
       console.log(`[PIPELINE-STEP 4b] Initiating Gemini AI extraction for '${fileName}'...`);
       extractedJson = await aiProvider.extractStructuredData({ prompt, buffer, mimeType, fileName });
       diagnostic.ai_extraction.success = true;

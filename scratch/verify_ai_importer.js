@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
-import Invoice from '../taxsetu-backend/models/Invoice.js';
-import Customer from '../taxsetu-backend/models/Customer.js';
+import Invoice from '../MyTaxsya-backend/models/Invoice.js';
+import Customer from '../MyTaxsya-backend/models/Customer.js';
 
 const API_URL = 'http://localhost:5001/api';
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://bharatsheyoran69_db_user:r1pUdSVhYO4RlNQB@cluster0.d1fpbmw.mongodb.net/?appName=Cluster0";
+const MONGODB_URI = process.env.MONGODB_URI;
 
 async function verifyAiImporter() {
   try {

@@ -5,9 +5,13 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import entityRoutes from "./routes/entityRoutes.js";
 import assistantRoutes from "./routes/assistantRoutes.js";
+import { assertProductionEnv, isOriginAllowed } from "./config/env.js";
 
 // Load environment variables
 dotenv.config();
+
+// Refuse to boot in production with missing or weak signing secrets
+assertProductionEnv();
 
 // Connect to Database
 connectDB();
@@ -26,24 +30,32 @@ process.on("uncaughtException", (error) => {
 
 const app = express();
 
-// Middleware
-const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5175")
-  .split(",")
-  .map((url) => url.trim())
-  .filter(Boolean);
+// Render/Vercel sit behind one proxy hop; without this every client shares the
+// proxy's IP and per-IP rate limits would throttle everybody together.
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 
+// Middleware
 app.use(cors({
   origin(origin, callback) {
     // Requests without an Origin header (health checks, curl) are safe to allow.
-    if (!origin || process.env.NODE_ENV !== "production" || allowedOrigins.includes(origin)) {
+    if (isOriginAllowed(origin)) {
       return callback(null, true);
     }
     return callback(new Error("Origin is not allowed by CORS"));
   },
   credentials: true,
 }));
-app.use(express.json({ limit: "100mb" }));
-app.use(express.urlencoded({ limit: "100mb", extended: true }));
+
+// Body-size limits per route group. Only the AI upload route needs 100 MB
+// (base64 documents); everything reachable without logging in stays small so it
+// cannot be used to exhaust memory. A body is parsed by the first matching
+// parser only, so the specific ones must be registered before the default.
+app.use("/api/assistant", express.json({ limit: "100mb" }), express.urlencoded({ limit: "100mb", extended: true }));
+app.use("/api/entities", express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "100kb" }));
+app.use(express.urlencoded({ limit: "100kb", extended: true }));
 
 // REST API Routes
 app.use("/api/auth", authRoutes);
@@ -64,7 +76,7 @@ app.use((err, req, res, next) => {
   console.error("Unhandled server error:", err);
   if (err.type === "entity.too.large" || err.status === 413 || err.statusCode === 413) {
     return res.status(413).json({
-      error: "Request payload is too large. Maximum supported size is 100 MB.",
+      error: "Request payload is too large.",
       code: "PAYLOAD_TOO_LARGE"
     });
   }

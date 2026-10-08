@@ -13,7 +13,12 @@ import { translateAuthError } from "@/utils/auth-errors";
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  // The backend sends people back to /login?error=... when Google sign-in fails; without
+  // showing it they would just see the login form again with no explanation.
+  const [error, setError] = useState(() => {
+    const reason = new URLSearchParams(window.location.search).get("error");
+    return reason ? `Google sign-in failed: ${reason}` : "";
+  });
   const [loading, setLoading] = useState(false);
 
   const { isAuthenticated, authChecked } = useAuth();
@@ -24,6 +29,13 @@ export default function Login() {
       navigate("/", { replace: true });
     }
   }, [authChecked, isAuthenticated, navigate]);
+
+  // The reason is already on screen; drop it from the address bar so a refresh does not repeat it.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("error")) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

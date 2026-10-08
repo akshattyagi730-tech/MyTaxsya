@@ -7,7 +7,7 @@ import StatusBadge from '@/components/StatusBadge';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import InvoiceForm from '@/components/Invoices/InvoiceForm';
 import { formatINR, formatDate } from '@/utils/format';
-import { jsPDF } from 'jspdf';
+import { buildInvoicePdf } from '@/utils/invoicePdf';
 
 export default function InvoiceDetail() {
   const { id } = useParams();
@@ -17,6 +17,7 @@ export default function InvoiceDetail() {
   const [error, setError] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -32,140 +33,42 @@ export default function InvoiceDetail() {
     load();
   }, [id]);
 
-  const handleDownloadPDF = () => {
-    if (!invoice) return;
-    const doc = new jsPDF();
+  // Business profile and customer are what make the bill a proper tax invoice (GSTIN, addresses, bank details).
+  const buildPdf = async () => {
+    let business = {};
+    let customer = {};
+    try {
+      const [b, c] = await Promise.all([
+        api.get('/entities/Business', { params: { sort: '-created_date', limit: 1 } }).catch(() => null),
+        invoice.customer_id ? api.get(`/entities/Customer/${invoice.customer_id}`).catch(() => null) : null,
+      ]);
+      business = (Array.isArray(b?.data) ? b.data[0] : b?.data) || {};
+      customer = c?.data || {};
+    } catch { /* the bill is still produced without them */ }
+    return buildInvoicePdf({ invoice, business, customer });
+  };
 
-    // Header - Title
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(22);
-    doc.text("TAX INVOICE", 14, 25);
-
-    // Line under title
-    doc.setDrawColor(200, 200, 200);
-    doc.line(14, 28, 196, 28);
-
-    // Invoice details
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Invoice Number:", 120, 36);
-    doc.setFont("helvetica", "normal");
-    doc.text(invoice.invoice_number, 160, 36);
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Invoice Date:", 120, 42);
-    doc.setFont("helvetica", "normal");
-    doc.text(formatDate(invoice.invoice_date), 160, 42);
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Due Date:", 120, 48);
-    doc.setFont("helvetica", "normal");
-    doc.text(formatDate(invoice.due_date), 160, 48);
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Payment Status:", 120, 54);
-    doc.setFont("helvetica", "bold");
-    doc.text(invoice.status.toUpperCase(), 160, 54);
-
-    // Customer details
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("BILL TO:", 14, 36);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text(invoice.customer_name || "—", 14, 42);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text("Registered Customer", 14, 48);
-
-    // Line items header
-    let y = 68;
-    doc.setFont("helvetica", "bold");
-    doc.text("Description", 14, y);
-    doc.text("Qty", 100, y);
-    doc.text("Rate", 125, y);
-    doc.text("GST %", 150, y);
-    doc.text("Amount", 175, y);
-
-    y += 4;
-    doc.line(14, y, 196, y);
-    y += 6;
-
-    // Line items list
-    doc.setFont("helvetica", "normal");
-    invoice.items?.forEach(item => {
-      if (y > 250) {
-        doc.addPage();
-        y = 20;
-        doc.setFont("helvetica", "bold");
-        doc.text("Description", 14, y);
-        doc.text("Qty", 100, y);
-        doc.text("Rate", 125, y);
-        doc.text("GST %", 150, y);
-        doc.text("Amount", 175, y);
-        y += 4;
-        doc.line(14, y, 196, y);
-        y += 6;
-        doc.setFont("helvetica", "normal");
-      }
-
-      doc.text(String(item.description || '—'), 14, y);
-      doc.text(String(item.quantity || 0), 100, y);
-      doc.text(formatINR(item.rate), 125, y);
-      doc.text(`${item.gst_rate}%`, 150, y);
-      doc.text(formatINR(item.quantity * item.rate), 175, y);
-      y += 7;
-    });
-
-    y += 2;
-    doc.line(14, y, 196, y);
-    y += 8;
-
-    // Totals breakdown
-    const labelX = 120;
-    const valueX = 175;
-
-    doc.text("Subtotal:", labelX, y);
-    doc.text(formatINR(invoice.subtotal), valueX, y);
-    y += 6;
-
-    if (invoice.cgst > 0) {
-      doc.text("CGST:", labelX, y);
-      doc.text(formatINR(invoice.cgst), valueX, y);
-      y += 6;
+  const handleDownloadPDF = async () => {
+    if (!invoice || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const doc = await buildPdf();
+      doc.save(`invoice_${String(invoice.invoice_number).replace(/[^\w.-]+/g, '_')}.pdf`);
+    } finally {
+      setPdfBusy(false);
     }
-    if (invoice.sgst > 0) {
-      doc.text("SGST:", labelX, y);
-      doc.text(formatINR(invoice.sgst), valueX, y);
-      y += 6;
-    }
-    if (invoice.igst > 0) {
-      doc.text("IGST:", labelX, y);
-      doc.text(formatINR(invoice.igst), valueX, y);
-      y += 6;
-    }
+  };
 
-    doc.setFont("helvetica", "bold");
-    doc.text("Grand Total:", labelX, y);
-    doc.text(formatINR(invoice.total), valueX, y);
-    y += 6;
-    doc.text("Paid Amount:", labelX, y);
-    doc.text(formatINR(invoice.paid_amount), valueX, y);
-    y += 6;
-    doc.text("Balance Due:", labelX, y);
-    doc.text(formatINR(invoice.balance_due), valueX, y);
-
-    // Notes
-    if (invoice.notes) {
-      y += 15;
-      doc.setFont("helvetica", "bold");
-      doc.text("Notes:", 14, y);
-      y += 6;
-      doc.setFont("helvetica", "normal");
-      doc.text(invoice.notes, 14, y);
+  const handlePrint = async () => {
+    if (!invoice || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const doc = await buildPdf();
+      doc.autoPrint();
+      window.open(doc.output('bloburl'), '_blank');
+    } finally {
+      setPdfBusy(false);
     }
-
-    doc.save(`invoice_${invoice.invoice_number}.pdf`);
   };
 
   if (loading) return <div className="p-8"><div className="h-64 rounded-xl bg-muted animate-pulse" /></div>;
@@ -185,10 +88,10 @@ export default function InvoiceDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2" onClick={handleDownloadPDF}>
-            <Download className="w-4 h-4" /> Download PDF
+          <Button variant="outline" className="gap-2" onClick={handleDownloadPDF} disabled={pdfBusy}>
+            <Download className="w-4 h-4" /> {pdfBusy ? 'Preparing…' : 'Download PDF'}
           </Button>
-          <Button variant="outline" className="gap-2" onClick={() => window.print()}>
+          <Button variant="outline" className="gap-2" onClick={handlePrint} disabled={pdfBusy}>
             <Printer className="w-4 h-4" /> Print
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => setEditOpen(true)}>

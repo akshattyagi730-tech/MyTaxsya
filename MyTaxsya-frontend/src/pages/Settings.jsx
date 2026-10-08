@@ -150,6 +150,31 @@ export default function Settings() {
               <Input value={business.pincode || ''} onChange={e => setBusiness({ ...business, pincode: e.target.value })} />
             </div>
           </div>
+          <div className="border-t border-border pt-4 space-y-4">
+            <p className="text-sm font-semibold">Invoice PDF details <span className="text-xs font-normal text-muted-foreground">(shown on the downloaded bill)</span></p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Bank Name</Label>
+                <Input value={business.bank_name || ''} onChange={e => setBusiness({ ...business, bank_name: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Account Number</Label>
+                <Input value={business.bank_account || ''} onChange={e => setBusiness({ ...business, bank_account: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>IFSC</Label>
+                <Input value={business.bank_ifsc || ''} onChange={e => setBusiness({ ...business, bank_ifsc: e.target.value.toUpperCase() })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>UPI ID</Label>
+                <Input value={business.upi_id || ''} onChange={e => setBusiness({ ...business, upi_id: e.target.value })} placeholder="name@bank" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Terms &amp; Conditions</Label>
+              <Textarea value={business.invoice_terms || ''} onChange={e => setBusiness({ ...business, invoice_terms: e.target.value })} rows={3} placeholder="e.g. Payment due within 30 days. Subject to Meerut jurisdiction." />
+            </div>
+          </div>
           <div className="flex items-center justify-end gap-3">
             {saved && <span className="text-sm text-secondary font-medium">Settings saved!</span>}
             <Button onClick={handleSave} disabled={saving || !business.name || !!gstinError || !!panError} className="gap-2">

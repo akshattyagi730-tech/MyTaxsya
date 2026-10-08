@@ -47,7 +47,9 @@ export default function Header({ onMenuClick }) {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-10 px-1.5 gap-2 hover:bg-muted">
+              {/* The ghost variant turns text to accent-foreground (white) on hover; paired with the light
+                  muted background here that made the name vanish, so keep the text colour explicit. */}
+              <Button variant="ghost" className="h-10 px-1.5 gap-2 hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground">
                 <Avatar className="w-8 h-8">
                   <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-white text-xs font-medium">
                     {initials}

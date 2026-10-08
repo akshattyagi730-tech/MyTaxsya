@@ -22,6 +22,9 @@ export default function Team() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('user');
   const [inviting, setInviting] = useState(false);
+  // Kept apart from `error`, which replaces the whole page with "Access restricted".
+  // A failed invite (already invited, email unavailable) belongs inside the dialog.
+  const [inviteError, setInviteError] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -37,17 +40,23 @@ export default function Team() {
     load();
   }, []);
 
+  const closeInvite = () => {
+    setInviteOpen(false);
+    setInviteError('');
+  };
+
   const handleInvite = async () => {
     setInviting(true);
+    setInviteError('');
     try {
       await api.post('/auth/invite', { email: inviteEmail, role: inviteRole });
-      setInviteOpen(false);
+      closeInvite();
       setInviteEmail('');
       setInviteRole('user');
       const res = await api.get('/entities/User', { params: { sort: '-created_date', limit: 200 } });
       setUsers(res.data);
     } catch (err) {
-      setError(err.message);
+      setInviteError(err.message || 'Could not send the invitation');
     } finally {
       setInviting(false);
     }
@@ -122,7 +131,7 @@ export default function Team() {
         </div>
       )}
 
-      <Dialog open={inviteOpen} onOpenChange={() => setInviteOpen(false)}>
+      <Dialog open={inviteOpen} onOpenChange={closeInvite}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Invite Team Member</DialogTitle></DialogHeader>
           <div className="space-y-4">
@@ -140,9 +149,10 @@ export default function Team() {
                 </SelectContent>
               </Select>
             </div>
+            {inviteError && <p role="alert" className="text-sm text-destructive">{inviteError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={closeInvite}>Cancel</Button>
             <Button onClick={handleInvite} disabled={inviting || !inviteEmail}>
               {inviting ? 'Inviting...' : 'Send Invite'}
             </Button>

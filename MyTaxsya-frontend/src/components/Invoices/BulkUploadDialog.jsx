@@ -11,6 +11,12 @@ import {
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import JSZip from 'jszip';
+import { applyReconciliation } from '@/utils/reconciliation';
+import { computeInvoiceAmounts, buildInvoiceItems } from '@/utils/invoiceImport';
+import { runPool } from '@/utils/concurrency';
+import {
+  EXTRACTION_CONCURRENCY, MAX_FILES_PER_BATCH, describeExtractionError, throwIfAiFailure, withAutoRetry,
+} from '@/utils/extraction';
 
 const normalizeInvoiceDate = (value) => {
   if (value === null || value === undefined) return null;
@@ -259,10 +265,112 @@ const getConfidenceColor = (conf) => {
   return 'text-destructive bg-destructive/10 border-destructive/20';
 };
 
+// ====================================================
+// Bulk extraction helpers
+// ====================================================
+
+const mimeForFileName = (name) => {
+  const n = String(name).toLowerCase();
+  if (n.endsWith('.pdf')) return 'application/pdf';
+  if (n.endsWith('.png')) return 'image/png';
+  if (n.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+};
+
+// Build the preview documents out of one /assistant/extract-invoice response.
+const docsFromExtractionResponse = (item, jobId, data) => {
+  const valStatus = data.status || data.validation_status || (data.fields?.invoice_number ? 'success' : 'needs_review');
+
+  // The backend can return several documents (e.g. from a ZIP archive)
+  if (data.documents && Array.isArray(data.documents) && data.documents.length > 0) {
+    return data.documents.map((doc) => {
+      const applied = applyReconciliation({ products: doc.products || doc.line_items || [], totals: doc.totals, reconciliation: doc.reconciliation });
+      return {
+        jobId: doc.jobId || jobId,
+        fileHash: doc.fileHash || null,
+        fileName: doc.fileName || item.name,
+        status: doc.status || valStatus,
+        documentType: doc.documentType || 'Sales Invoice',
+        confidence: doc.confidence !== undefined ? doc.confidence : (doc.confidence_score || 0.95),
+        fields: doc.fields || {},
+        products: applied.products,
+        rows: doc.rows || [],
+        seller_information: doc.seller_information,
+        buyer_information: doc.buyer_information,
+        invoice_information: doc.invoice_information,
+        totals: applied.totals,
+        line_items: applied.products,
+        reconciliation: doc.reconciliation,
+        warnings: doc.warnings,
+        debug: doc.debug
+      };
+    });
+  }
+
+  const applied = applyReconciliation({ products: data.products || data.line_items || [], totals: data.totals, reconciliation: data.reconciliation });
+  return [{
+    jobId: data.jobId || jobId,
+    fileHash: data.fileHash || null,
+    fileName: item.name,
+    status: valStatus,
+    documentType: data.documentType || 'Sales Invoice',
+    confidence: data.confidence !== undefined ? data.confidence : (data.confidence_score || 0.95),
+    fields: data.fields || {},
+    products: applied.products,
+    rows: data.rows || [],
+    seller_information: data.seller_information,
+    buyer_information: data.buyer_information,
+    invoice_information: data.invoice_information,
+    totals: applied.totals,
+    line_items: applied.products,
+    reconciliation: data.reconciliation,
+    warnings: data.warnings || (valStatus === 'needs_review' ? ['Invoice number could not be confidently read'] : []),
+    debug: data.debug
+  }];
+};
+
+// Send one PDF/image to the backend and return the documents it found.
+const requestExtraction = async (item) => {
+  const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const formData = new FormData();
+  formData.append('file', item);
+  formData.append('jobId', jobId);
+  const res = await api.post('/assistant/extract-invoice', formData);
+  const data = res.data || {};
+  throwIfAiFailure(data);
+  if (data.jobId && data.jobId !== jobId) {
+    console.warn(`[FRONTEND-WARN] Mismatched response jobId (${data.jobId}) vs active jobId (${jobId}). Ignoring result.`);
+  }
+  return docsFromExtractionResponse(item, jobId, data);
+};
+
+// Same, but a temporary failure (rate limit, overloaded model) gets a short pause and one more go.
+const extractWithRetry = (item) => withAutoRetry(() => requestExtraction(item));
+
+let failedDocCounter = 0;
+// A placeholder row for a file that could not be read, keeping the file so it can be retried.
+const makeFailedDoc = (file, info) => ({
+  id: `failed-${Date.now()}-${failedDocCounter++}`,
+  failed: true,
+  file,
+  fileName: file.name,
+  documentType: 'Unknown Document',
+  confidence: 0,
+  status: 'FAILED',
+  fields: {},
+  products: [],
+  rows: [],
+  warnings: [],
+  error: info.message,
+  errorCode: info.code,
+  retryable: info.retryable
+});
+
 export default function BulkUploadDialog({ open, onClose, onDone }) {
   const navigate = useNavigate();
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [running, setRunning] = useState(0); // files being read by the AI right now
   const [status, setStatus] = useState('');
   const [statusType, setStatusType] = useState('info');
   const [updateExisting, setUpdateExisting] = useState(false);
@@ -281,6 +389,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
     setStatusType('info');
     setProcessing(false);
     setProgress({ current: 0, total: 0 });
+    setRunning(0);
     setImportSummary(null);
     setExtractedDocs([]);
     setSelectedDocIndex(0);
@@ -311,40 +420,47 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
   };
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
     // Reset previous extraction state completely before starting fresh upload
     setExtractedDocs([]);
     setSelectedDocIndex(0);
     setImportSummary(null);
     setLastUploadedFile(null);
-    
-    processUploadedFile(file);
+
+    processUploadedFile(files.length === 1 ? files[0] : files);
     if (e.target) e.target.value = '';
   };
 
-  const processUploadedFile = async (file) => {
-    if (!file) return;
-    console.log(`[FRONTEND-DEBUG] Processing file upload: '${file.name}' (${file.size} bytes, MIME: ${file.type})`);
+  const processUploadedFile = async (input) => {
+    const inputFiles = (Array.isArray(input) ? input : [input]).filter(Boolean);
+    if (inputFiles.length === 0) return;
+    console.log(`[FRONTEND-DEBUG] Processing ${inputFiles.length} upload(s): ${inputFiles.map((f) => `'${f.name}'`).join(', ').slice(0, 300)}`);
 
     // Purge any stale UI extraction state
     setExtractedDocs([]);
     setSelectedDocIndex(0);
     setImportSummary(null);
-    setLastUploadedFile(file);
+    setLastUploadedFile(input);
     setProcessing(true);
     setStatusType('info');
     setStatus('Loading file...');
+    setProgress({ current: 0, total: 0 });
     setIsRetryable(true);
 
     try {
       const filesToProcess = [];
 
       // ====================================================
-      // 1. Process ZIP File
+      // 1. Expand ZIP archives in the browser; other files are used as they are
       // ====================================================
-      if (file.name.toLowerCase().endsWith('.zip')) {
-        setStatus('Extracting ZIP archive in-memory...');
+      for (const file of inputFiles) {
+        if (!file.name.toLowerCase().endsWith('.zip')) {
+          filesToProcess.push(file);
+          continue;
+        }
+
+        setStatus(`Extracting ZIP archive ${file.name} in-memory...`);
         const zip = new JSZip();
         const loadedZip = await zip.loadAsync(file);
 
@@ -353,7 +469,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
 
           const isText = filename.toLowerCase().match(/\.(csv)$/);
           const isExcel = filename.toLowerCase().match(/\.(xlsx|xls)$/);
-          const isMedia = filename.toLowerCase().match(/\.(pdf|png|jpg|jpeg)$/);
+          const isMedia = filename.toLowerCase().match(/\.(pdf|png|jpg|jpeg|webp)$/);
 
           if (!isText && !isExcel && !isMedia) continue; // skip other formats
 
@@ -366,29 +482,31 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
 
           const mimeType = isText ? 'text/csv'
             : isExcel ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-              : isMedia && filename.toLowerCase().endsWith('.pdf') ? 'application/pdf'
-                : 'image/jpeg';
+              : mimeForFileName(filename);
 
-          const extractedFile = new File([content], filename, { type: mimeType });
-          filesToProcess.push(extractedFile);
+          filesToProcess.push(new File([content], filename, { type: mimeType }));
         }
+      }
 
-        if (filesToProcess.length === 0) {
-          throw new Error('No supported documents (CSV, Excel, PDF, PNG, JPG) found inside ZIP archive.');
-        }
-      } else {
-        filesToProcess.push(file);
+      if (filesToProcess.length === 0) {
+        throw new Error('No supported documents (CSV, Excel, PDF, PNG, JPG) found inside ZIP archive.');
+      }
+      if (filesToProcess.length > MAX_FILES_PER_BATCH) {
+        throw new Error(`Too many files (${filesToProcess.length}). Please upload at most ${MAX_FILES_PER_BATCH} documents per batch.`);
       }
 
       // ====================================================
       // 2. Classify and Extract each file
       // ====================================================
-      const docResults = [];
+      const docSlots = []; // one slot per file, so the queue keeps the upload order
+      const mediaJobs = []; // PDFs / images: read by the AI in parallel after this loop
       let currentFileIdx = 0;
 
       for (const item of filesToProcess) {
         currentFileIdx++;
-        setStatus(`Analyzing file ${currentFileIdx} of ${filesToProcess.length}: ${item.name}...`);
+        const fileDocs = [];
+        docSlots.push(fileDocs);
+        setStatus(`Reading file ${currentFileIdx} of ${filesToProcess.length}: ${item.name}...`);
 
         const fileName = item.name;
         const fileNameLower = fileName.toLowerCase();
@@ -411,7 +529,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           }
 
           if (rawRows.length === 0) {
-            docResults.push({
+            fileDocs.push({
               fileName: item.name,
               documentType: 'Unknown Document',
               confidence: 1.0,
@@ -476,7 +594,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             });
           }
 
-          docResults.push({
+          fileDocs.push({
             fileName: item.name,
             documentType,
             confidence: Math.round(confidence * 100) / 100,
@@ -489,81 +607,62 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           });
 
         } else {
-          // PDFs / Images / ZIPs using FormData for streaming 100MB uploads with progress
-          const jobId = item.jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-          const formData = new FormData();
-          formData.append('file', item);
-          formData.append('jobId', jobId);
-
-          setStatus(`Reading document & extracting text from ${item.name}...`);
-
-          const res = await api.post('/assistant/extract-invoice', formData, {
-            onUploadProgress: (progressEvent) => {
-              if (progressEvent.total) {
-                const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                if (percent < 100) {
-                  setStatus(`Uploading ${item.name} (${percent}%)...`);
-                } else {
-                  setStatus(`Extracting text, running OCR & AI analysis for ${item.name}...`);
-                }
-              }
-            }
-          });
-
-          setStatus(`Validating extracted invoice data for ${item.name}...`);
-
-          const data = res.data || {};
-
-          // Verify job identity match
-          if (data.jobId && data.jobId !== jobId) {
-            console.warn(`[FRONTEND-WARN] Mismatched response jobId (${data.jobId}) vs active jobId (${jobId}). Ignoring result.`);
-          }
-
-          const valStatus = data.status || data.validation_status || (data.fields?.invoice_number ? "success" : "needs_review");
-
-          // If backend returned multiple documents (e.g. from a ZIP archive)
-          if (data.documents && Array.isArray(data.documents) && data.documents.length > 0) {
-            data.documents.forEach(doc => {
-              docResults.push({
-                jobId: doc.jobId || jobId,
-                fileHash: doc.fileHash || null,
-                fileName: doc.fileName || item.name,
-                status: doc.status || valStatus,
-                documentType: doc.documentType || "Sales Invoice",
-                confidence: doc.confidence !== undefined ? doc.confidence : (doc.confidence_score || 0.95),
-                fields: doc.fields || {},
-                products: doc.products || doc.line_items || [],
-                rows: doc.rows || [],
-                seller_information: doc.seller_information,
-                buyer_information: doc.buyer_information,
-                invoice_information: doc.invoice_information,
-                totals: doc.totals,
-                line_items: doc.line_items,
-                warnings: doc.warnings,
-                debug: doc.debug
-              });
-            });
-          } else {
-            docResults.push({
-              jobId: data.jobId || jobId,
-              fileHash: data.fileHash || null,
-              fileName: item.name,
-              status: valStatus,
-              documentType: data.documentType || "Sales Invoice",
-              confidence: data.confidence !== undefined ? data.confidence : (data.confidence_score || 0.95),
-              fields: data.fields || {},
-              products: data.products || data.line_items || [],
-              rows: data.rows || [],
-              seller_information: data.seller_information,
-              buyer_information: data.buyer_information,
-              invoice_information: data.invoice_information,
-              totals: data.totals,
-              line_items: data.line_items,
-              warnings: data.warnings || (valStatus === "needs_review" ? ["Invoice number could not be confidently read"] : []),
-              debug: data.debug
-            });
-          }
+          // PDFs / images: queue them, they are read in parallel once the loop ends.
+          mediaJobs.push({ item, slot: fileDocs });
         }
+      }
+
+      // ====================================================
+      // 3. Read all PDFs / images with the AI, a few at a time. Every file stands on its
+      //    own: a bad file or a temporary hiccup never throws away the rest of the batch.
+      // ====================================================
+      let fatalInfo = null;
+      if (mediaJobs.length > 0) {
+        let finished = 0;
+        let active = 0;
+        setProgress({ current: 0, total: mediaJobs.length });
+        setStatus(`Extracting 0 of ${mediaJobs.length} files...`);
+
+        const { skipped } = await runPool(mediaJobs, EXTRACTION_CONCURRENCY, async (job) => {
+          active++;
+          setRunning(active);
+          try {
+            const docs = await extractWithRetry(job.item);
+            job.slot.push(...docs);
+          } catch (err) {
+            const info = describeExtractionError(err);
+            if (info.fatal && !fatalInfo) fatalInfo = info;
+            job.slot.push(makeFailedDoc(job.item, info));
+          } finally {
+            active--;
+            finished++;
+            setRunning(active);
+            setProgress({ current: finished, total: mediaJobs.length });
+            setStatus(`Extracting ${finished} of ${mediaJobs.length} files...`);
+          }
+        }, { shouldStop: () => fatalInfo !== null });
+
+        setRunning(0);
+
+        // Files that were never sent because a fatal error (bad key, quota) stopped the run.
+        skipped.forEach((i) => {
+          mediaJobs[i].slot.push(makeFailedDoc(mediaJobs[i].item, {
+            message: `Not processed: extraction stopped. ${fatalInfo.message}`,
+            code: fatalInfo.code,
+            retryable: true
+          }));
+        });
+      }
+
+      const docResults = docSlots.flat();
+
+      // Nothing could be read and the reason is fatal (bad key, quota): show that plainly.
+      if (fatalInfo && docResults.every((d) => d.failed)) {
+        setStatusType('error');
+        setStatus(fatalInfo.message);
+        setIsRetryable(fatalInfo.retryable);
+        setProcessing(false);
+        return;
       }
 
       setExtractedDocs(docResults);
@@ -602,6 +701,24 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
       setStatus(errorMsg);
       setProcessing(false);
     }
+  };
+
+  // Read one failed file again and swap the result into the queue. Everything else stays untouched.
+  const retryDoc = async (doc) => {
+    if (!doc?.file || doc.retrying) return;
+    setExtractedDocs((prev) => prev.map((d) => (d.id === doc.id ? { ...d, retrying: true } : d)));
+    try {
+      const docs = await extractWithRetry(doc.file);
+      setExtractedDocs((prev) => prev.flatMap((d) => (d.id === doc.id ? docs : [d])));
+    } catch (err) {
+      const failed = { ...makeFailedDoc(doc.file, describeExtractionError(err)), id: doc.id };
+      setExtractedDocs((prev) => prev.map((d) => (d.id === doc.id ? failed : d)));
+    }
+  };
+
+  const retryAllFailed = async () => {
+    const targets = extractedDocs.filter((d) => d.failed && d.file && !d.retrying);
+    await runPool(targets, EXTRACTION_CONCURRENCY, (doc) => retryDoc(doc));
   };
 
   const handleUpdateField = (docIdx, fieldKey, val) => {
@@ -689,6 +806,13 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
         docIdx++;
         setStatus(`Importing document ${docIdx} of ${totalDocsCount}: ${doc.fileName}...`);
 
+        // A file that could not be read has nothing to import; report it instead.
+        if (doc.failed) {
+          failedReport.push({ rowNumber: docIdx, invoiceNumber: doc.fileName, error: `Not imported: ${doc.error}` });
+          failDocsCount++;
+          continue;
+        }
+
         const docType = doc.documentType;
         const typeInfo = DOCUMENT_TYPES[docType] || DOCUMENT_TYPES["Unknown Document"];
 
@@ -708,9 +832,11 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             const invoiceNumber = String(doc.fields.invoice_number || '').trim();
             const customerName = String(doc.fields.customer || doc.fields.business_name || 'General Customer').trim();
             const rawDate = doc.fields.invoice_date || doc.invoice_information?.invoice_date || '';
-            const date = normalizeInvoiceDate(rawDate) || new Date().toISOString().split('T')[0];
+            const date = normalizeInvoiceDate(rawDate);
 
             if (!invoiceNumber) throw new Error('Missing invoice number.');
+            // Never guess a date: a wrong one lands the invoice in the wrong GST period.
+            if (!date) throw new Error('Invoice date is missing or unreadable. Fix it in the review step and import again.');
 
             // Create customer if missing — carry over the extracted buyer's
             // state/GSTIN/address so downstream intra-/inter-state (CGST+SGST
@@ -729,35 +855,25 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               customerMap[customerName.toLowerCase()] = customerId;
             }
 
-            const itemsSum = doc.products.reduce((s, p) => s + (Number(p.total) || (Number(p.quantity) * Number(p.rate)) || 0), 0);
-            const discount = Number(doc.totals?.discount) || 0;
-            const cgst = Number(doc.totals?.cgst) || 0;
-            const sgst = Number(doc.totals?.sgst) || 0;
-            const igst = Number(doc.totals?.igst) || 0;
-            // Prefer the invoice's own printed/extracted grand total when available —
-            // line-item totals may already include tax, so re-adding cgst/sgst/igst
-            // on top of them would double-count it.
-            const total = Number(doc.totals?.grand_total) || Math.max(0, itemsSum - discount);
+            const amounts = computeInvoiceAmounts({ products: doc.products, totals: doc.totals });
 
             const record = {
               invoice_number: invoiceNumber,
               customer_id: customerId,
               customer_name: customerName,
               invoice_date: date,
-              subtotal: itemsSum,
-              discount,
-              cgst,
-              sgst,
-              igst,
-              total,
+              subtotal: amounts.subtotal,
+              discount: amounts.discount,
+              cgst: amounts.cgst,
+              sgst: amounts.sgst,
+              igst: amounts.igst,
+              cess: amounts.cess,
+              round_off: amounts.round_off,
+              total: amounts.total,
+              balance_due: amounts.total,
               status: 'draft',
-              items: doc.products.map(p => ({
-                description: p.description || 'Imported Item',
-                quantity: Number(p.quantity) || 1,
-                rate: Number(p.rate) || itemsSum,
-                amount: p.total || itemsSum,
-                gst_rate: Number(p.gst_rate) || 0
-              })),
+              items: buildInvoiceItems(doc.products),
+              warnings: doc.warnings || [],
               ai_confidence: doc.confidence,
               ai_category: 'AI Imported'
             };
@@ -778,7 +894,8 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             const vendorName = String(doc.fields.supplier || doc.fields.business_name || 'Generic Vendor').trim();
             const rawDate = doc.fields.invoice_date || doc.invoice_information?.invoice_date || '';
             const date = normalizeInvoiceDate(rawDate) || new Date().toISOString().split('T')[0];
-            const amount = doc.products.reduce((s, p) => s + (Number(p.total) || 0), 0) || Number(doc.fields.total) || 0;
+            // The printed grand total already includes GST; summing line values would drop the tax.
+            const amount = computeInvoiceAmounts({ products: doc.products, totals: doc.totals }).total;
             const title = docType === "Purchase Invoice"
               ? `Purchase Invoice: ${doc.fields.invoice_number || 'N/A'}`
               : `${docType}: ${vendorName}`;
@@ -998,6 +1115,8 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
   // ====================================================
   if (Array.isArray(extractedDocs) && extractedDocs.length > 0) {
     const safeIndex = Math.min(Math.max(0, selectedDocIndex), extractedDocs.length - 1);
+    const failedDocs = extractedDocs.filter((d) => d.failed);
+    const anyRetrying = extractedDocs.some((d) => d.retrying);
     const rawSelected = extractedDocs[safeIndex] || {};
     const selectedDoc = {
       fileName: rawSelected.fileName || 'Document.pdf',
@@ -1013,6 +1132,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
       invoice_information: rawSelected.invoice_information || {},
       totals: rawSelected.totals || {},
       line_items: rawSelected.line_items || rawSelected.products || [],
+      reconciliation: rawSelected.reconciliation || null,
       warnings: rawSelected.warnings || []
     };
 
@@ -1048,6 +1168,20 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               Review, edit, and confirm AI-extracted fields and tables before importing to database.
             </DialogDescription>
           </DialogHeader>
+
+          {failedDocs.length > 0 && (
+            <div className="flex items-center justify-between gap-3 px-6 py-2.5 border-b border-destructive/20 bg-destructive/5 text-xs flex-shrink-0">
+              <span className="flex items-center gap-2 text-destructive font-medium">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                {failedDocs.length === extractedDocs.length
+                  ? `${extractedDocs.length === 1 ? 'This file' : `None of the ${extractedDocs.length} files`} could be read. Check the reason on each file, then retry.`
+                  : `${failedDocs.length} of ${extractedDocs.length} file${extractedDocs.length === 1 ? '' : 's'} could not be read. The others are ready to review and import.`}
+              </span>
+              <Button size="sm" variant="outline" onClick={retryAllFailed} disabled={anyRetrying} className="border-destructive/30 hover:bg-destructive/10 flex-shrink-0">
+                {anyRetrying ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Retrying...</> : 'Retry failed files'}
+              </Button>
+            </div>
+          )}
 
           {/* Main workspace splits */}
           <div className="flex flex-1 overflow-hidden min-h-0">
@@ -1123,7 +1257,16 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                 </div>
               </div>
 
-              {hasNoData ? (
+              {rawSelected.failed ? (
+                <div className="flex flex-col items-center justify-center p-8 border border-destructive/20 bg-destructive/5 rounded-xl space-y-3">
+                  <AlertCircle className="w-8 h-8 text-destructive" />
+                  <p className="text-sm font-semibold text-destructive">This file could not be read.</p>
+                  <p className="text-xs text-muted-foreground text-center max-w-md">{rawSelected.error}</p>
+                  <Button size="sm" variant="outline" onClick={() => retryDoc(rawSelected)} disabled={!!rawSelected.retrying || !rawSelected.file}>
+                    {rawSelected.retrying ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Retrying...</> : 'Retry this file'}
+                  </Button>
+                </div>
+              ) : hasNoData ? (
                 <div className="flex flex-col items-center justify-center p-8 border border-destructive/20 bg-destructive/5 rounded-xl space-y-3">
                   <AlertCircle className="w-8 h-8 text-destructive" />
                   <p className="text-sm font-semibold text-destructive">No valid business data could be detected.</p>
@@ -1144,6 +1287,16 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
                           <li key={idx}>{w}</li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {/* How the bill's prices were interpreted (e.g. GST-inclusive MRP bills are converted to ex-tax) */}
+                  {selectedDoc.reconciliation?.notes?.length > 0 && (
+                    <div className="p-4 border border-primary/20 bg-primary/5 text-primary rounded-xl flex items-start gap-2.5">
+                      <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <div className="text-xs space-y-0.5">
+                        {selectedDoc.reconciliation.notes.map((n, i) => <p key={i}>{n}</p>)}
+                      </div>
                     </div>
                   )}
 
@@ -1334,7 +1487,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               <Button variant="ghost" onClick={handleClose} disabled={processing}>Cancel</Button>
               <Button
                 onClick={handleImportAll}
-                disabled={processing || !extractedDocs.some(d => !!DOCUMENT_TYPES[d.documentType]?.collection)}
+                disabled={processing || anyRetrying || !extractedDocs.some(d => !d.failed && !!DOCUMENT_TYPES[d.documentType]?.collection)}
                 className="gap-2"
               >
                 {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
@@ -1362,7 +1515,7 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <div
             onClick={() => !processing && inputRef.current?.click()}
             className="border-2 border-dashed border-border rounded-lg p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
@@ -1370,39 +1523,46 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             <input
               ref={inputRef}
               type="file"
-              accept=".csv,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.zip"
+              multiple
+              accept=".csv,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.webp,.zip"
               className="hidden"
               onChange={handleFileChange}
               disabled={processing}
             />
             <UploadCloud className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm font-semibold">Click to select files or ZIP archive</p>
-            <p className="text-xs text-muted-foreground mt-1">Accepts multiple documents via ZIP</p>
+            <p className="text-sm font-semibold">Click to select one or many files, or a ZIP archive</p>
+            <p className="text-xs text-muted-foreground mt-1">Up to {MAX_FILES_PER_BATCH} documents at once, read several at a time</p>
           </div>
 
           {processing && (
             <div className="space-y-2 mt-4 p-4 bg-muted/30 border border-border rounded-lg">
               <div className="flex justify-between items-center text-xs">
                 <span className="font-semibold text-foreground">Analyzing Document Queue</span>
-                <span className="text-muted-foreground font-mono font-bold animate-pulse">Processing...</span>
+                <span className="text-muted-foreground font-mono font-bold">
+                  {progress.total > 0
+                    ? `${progress.current} / ${progress.total}${running > 0 ? ` · ${running} at once` : ''}`
+                    : 'Processing...'}
+                </span>
               </div>
               <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden border border-border">
-                <div className="bg-primary h-full rounded-full w-1/2 animate-bounce" />
+                {progress.total > 0
+                  ? <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }} />
+                  : <div className="bg-primary h-full rounded-full w-1/2 animate-bounce" />}
               </div>
             </div>
           )}
 
           {status && (
             <div className="space-y-2">
-              <div className={`flex items-center justify-between text-sm p-3 rounded-lg ${statusType === 'error' ? 'bg-destructive/10 text-destructive'
+              <div className={`flex items-center justify-between text-sm p-3 rounded-lg min-w-0 ${statusType === 'error' ? 'bg-destructive/10 text-destructive'
                   : statusType === 'success' ? 'bg-secondary/10 text-secondary'
                     : 'bg-muted text-muted-foreground'
                 }`}>
-                <div className="flex items-start gap-2 flex-1">
+                <div className="flex items-start gap-2 flex-1 min-w-0">
                   {statusType === 'error' ? <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                     : statusType === 'success' ? <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
                       : <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />}
-                  <span>{status}</span>
+                  <span className="break-words min-w-0">{status}</span>
                 </div>
                 {statusType === 'error' && isRetryable && (
                   <Button

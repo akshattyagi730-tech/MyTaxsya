@@ -2,13 +2,13 @@ import http from "http";
 import jwt from "jsonwebtoken";
 import AdmZip from "adm-zip";
 
-const JWT_SECRET = process.env.JWT_SECRET || "2d4d3c1a9f4f8c8b5e7a6d1c9a3b7f2e8c4d6a1b9e3f5c7d8a2b4e6f8c1d3a5";
-const testToken = jwt.sign({ id: "660000000000000000000001", email: "test@taxsetu.com" }, JWT_SECRET, { expiresIn: "1h" });
+const JWT_SECRET = process.env.JWT_SECRET;
+const testToken = jwt.sign({ id: "660000000000000000000001", email: "test@mytaxsya.com" }, JWT_SECRET, { expiresIn: "1h" });
 
 // Helper to make multipart request to extraction endpoint
 const sendMultipartRequest = (buffer, fileName, mimeType) => {
   return new Promise((resolve, reject) => {
-    const boundary = "----TaxSetuSuiteBoundary" + Math.random().toString(36).substring(2);
+    const boundary = "----MyTaxsyaSuiteBoundary" + Math.random().toString(36).substring(2);
     let body = [];
     body.push(Buffer.from(`--${boundary}\r\n`));
     body.push(Buffer.from(`Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`));
@@ -50,7 +50,7 @@ const sendMultipartRequest = (buffer, fileName, mimeType) => {
 
 const runFullTestSuite = async () => {
   console.log("==================================================");
-  console.log("   TAXSETU COMPREHENSIVE EXTRACTION TEST SUITE    ");
+  console.log("   MYTAXSYA COMPREHENSIVE EXTRACTION TEST SUITE    ");
   console.log("==================================================\n");
 
   const results = [];

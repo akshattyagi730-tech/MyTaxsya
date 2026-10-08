@@ -12,8 +12,9 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: function() {
-      // Password is only required if they are not using Google OAuth
-      return !this.google_id;
+      // Not required for Google sign-in users, nor for a team member who has been
+      // invited but has not chosen a password yet.
+      return !this.google_id && !this.invite_pending;
     },
   },
   role: {
@@ -32,14 +33,32 @@ const userSchema = new mongoose.Schema({
   refresh_token: {
     type: String,
     default: null,
+  },
+  invite_pending: {
+    type: Boolean,
+    default: false,
   }
 }, {
-  timestamps: { createdAt: "created_date", updatedAt: "updated_date" }
+  timestamps: { createdAt: "created_date", updatedAt: "updated_date" },
+  toJSON: {
+    virtuals: true,
+    // Secrets must never leave the server, whichever code path serialises a user.
+    transform: function (doc, ret) {
+      ret.id = String(ret._id);
+      delete ret.password;
+      delete ret.refresh_token;
+      delete ret.google_id;
+      delete ret.__v;
+      return ret;
+    }
+  }
 });
 
 // Hash password before saving
 userSchema.pre("save", async function(next) {
   if (!this.isModified("password")) return next();
+  // Set by sign-up: the password was already bcrypt-hashed when the OTP was requested.
+  if (this.$locals.passwordAlreadyHashed) return next();
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);

@@ -154,3 +154,57 @@ test("production CORS is strict, development and origin-less requests are open",
     if (saved.env === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = saved.env;
   }
 });
+
+import { isValidGstin } from "../../services/invoiceMath.js";
+test("isValidGstin checks format, state code and check digit", () => {
+  assert.equal(isValidGstin("27AAPFU0939F1ZV"), true);
+  assert.equal(isValidGstin("27AAPFU0939F1ZW"), false); // wrong check digit
+  assert.equal(isValidGstin("99AAPFU0939F1ZV"), false); // no such state
+  assert.equal(isValidGstin(""), false);
+});
+
+import { reconcileInvoice } from "../../services/invoiceMath.js";
+test("an implausibly large round-off cannot make a wrong bill reconcile as GST-inclusive", () => {
+  const r = reconcileInvoice({ items: [{ quantity: 1050, rate: 35, taxable_value: 36750 }], igst: 1837.5, round_off: 1838, declaredTotal: 38588 });
+  assert.equal(r.mode, "exclusive");
+  assert.ok(r.warnings.some((w) => /round-off/i.test(w)));
+});
+
+import { normalizeInvoiceDate } from "../../services/extractionEngine.js";
+test("a handwritten 3-digit year such as 026 is read as 2026, not dropped", () => {
+  assert.equal(normalizeInvoiceDate("15/07/026"), "2026-07-15");
+  assert.equal(normalizeInvoiceDate("15/07/2026"), "2026-07-15");
+  assert.equal(normalizeInvoiceDate("15/07/26"), "2026-07-15");
+});
+
+import { verifyAgainstSource, numbersInText } from "../../services/invoiceMath.js";
+const PDF_TEXT = "TAX INVOICE\nExample Traders GSTIN: 27AAPFU0939F1ZV\nInvoice No. KC/SL/26-27/39\nGrand Total ₹ 1,66,468.5\nIGST 25,393.5\n" + "x".repeat(40);
+test("numbersInText reads Indian and plain formats alike", () => {
+  const n = numbersInText("₹ 1,66,468.50 and 166468.5 and 25,393.5");
+  assert.ok(n.has(166468.5) && n.has(25393.5));
+});
+test("grounding accepts values found in the PDF text", () => {
+  const r = verifyAgainstSource({ invoice_number: "KC/SL/26-27/39", total_amount: 166468.5, igst: 25393.5, seller: { gstin: "27AAPFU0939F1ZV" }, buyer: {} }, PDF_TEXT);
+  assert.deepEqual(r.warnings, []);
+  assert.deepEqual(r.corrections, []);
+});
+test("grounding snaps a misread GSTIN to the valid one in the text, and flags an amount that is not there", () => {
+  const ex = { invoice_number: "KC/SL/26-27/39", total_amount: 166486.5, seller: { gstin: "27AAPFU0939F1ZW" }, buyer: {} };
+  const r = verifyAgainstSource(ex, PDF_TEXT);
+  assert.equal(ex.seller.gstin, "27AAPFU0939F1ZV");
+  assert.equal(r.corrections.length, 1);
+  assert.ok(r.warnings.some((w) => /Grand total/.test(w)));
+});
+test("grounding does nothing without a usable text layer", () => {
+  assert.deepEqual(verifyAgainstSource({ invoice_number: "X" }, ""), { warnings: [], corrections: [] });
+});
+
+test("OCR text only repairs a GSTIN that already fails its check digit", () => {
+  const ocr = "Seller GSTIN: 27AAPFU0939F1ZV ... " + "x".repeat(40);
+  const bad = { seller: { gstin: "27AAPFU0939F1ZW" }, buyer: {} };
+  assert.equal(verifyAgainstSource(bad, ocr, { gstinOnly: true }).corrections.length, 1);
+  assert.equal(bad.seller.gstin, "27AAPFU0939F1ZV");
+  const valid = { seller: { gstin: "09AABCU9603R1ZM" }, buyer: {} };
+  verifyAgainstSource(valid, ocr, { gstinOnly: true });
+  assert.equal(valid.seller.gstin, "09AABCU9603R1ZM");
+});

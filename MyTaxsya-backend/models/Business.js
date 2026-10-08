@@ -35,6 +35,11 @@ const businessSchema = new mongoose.Schema({
   logo_url: {
     type: String,
   },
+  bank_name: { type: String },
+  bank_account: { type: String },
+  bank_ifsc: { type: String },
+  upi_id: { type: String },
+  invoice_terms: { type: String },
   business_type: {
     type: String,
     enum: ["proprietorship", "partnership", "llp", "private_limited", "public_limited", "huf", "trust"],

@@ -87,7 +87,10 @@ export function reconcileInvoice({ items = [], discount = 0, cgst = 0, sgst = 0,
 
   const tol = Math.max(1.01, printedTotal * 0.0005); // ₹1 rounding, or 0.05% on large bills
   const afterDiscount = gross - d;
-  const ro = num(round_off);
+  // A real round-off is paise to a few rupees. A bigger "round-off" is a misread (e.g. a tax figure read
+  // from the wrong row) and would let a wrong bill reconcile, so it is ignored for the maths.
+  const roRaw = num(round_off);
+  const ro = Math.abs(roRaw) <= 10 ? roRaw : 0;
 
   // Hypothesis A — exclusive: GST is added on top of the line amounts.
   const totalExclusive = afterDiscount + printedTax + ro;
@@ -99,6 +102,8 @@ export function reconcileInvoice({ items = [], discount = 0, cgst = 0, sgst = 0,
     exclusive: { total: round2(totalExclusive), delta: round2(deltaE) },
     inclusive: { total: round2(totalInclusive), delta: round2(deltaI) },
   };
+
+  if (ro !== roRaw) result.warnings.push(`Round-off of ₹${round2(roRaw)} is too large to be a real round-off, so it was ignored — check that row of the bill.`);
 
   let mode;
   if (deltaE <= tol) mode = "exclusive";
@@ -205,4 +210,97 @@ export function reconcileInvoice({ items = [], discount = 0, cgst = 0, sgst = 0,
   }
 
   return result;
+}
+
+const GSTIN_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+/** True when a GSTIN has a valid state code, PAN-shaped body and correct check character. */
+export function isValidGstin(value) {
+  const g = String(value || "").trim().toUpperCase();
+  if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(g) || !STATE_CODES[g.slice(0, 2)]) return false;
+  let sum = 0;
+  for (let i = 0; i < 14; i++) {
+    const product = GSTIN_CHARS.indexOf(g[i]) * (i % 2 === 0 ? 1 : 2);
+    sum += Math.floor(product / 36) + (product % 36);
+  }
+  return GSTIN_CHARS[(36 - (sum % 36)) % 36] === g[14];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Grounding: for a digital PDF the document's own text is the ground truth, so every value the model
+// returned can be looked up in it. A value that is not in the text was misread or invented.
+// ---------------------------------------------------------------------------------------------
+
+/** All numbers in a text as plain numbers: "1,66,468.50" and "166468.5" both become 166468.5. */
+export function numbersInText(text = "") {
+  const found = new Set();
+  for (const m of String(text).matchAll(/\d[\d,]*(?:\.\d+)?/g)) {
+    const n = Number(m[0].replace(/,/g, ""));
+    if (Number.isFinite(n)) found.add(Math.round(n * 100) / 100);
+  }
+  return found;
+}
+
+const squash = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/** GSTIN-shaped tokens in the text that also pass the check-digit test. */
+export function gstinsInText(text = "") {
+  const tokens = String(text).toUpperCase().match(/\b\d{2}[A-Z0-9]{13}\b/g) || [];
+  return [...new Set(tokens.filter(isValidGstin))];
+}
+
+const editDistance = (a, b) => {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+};
+
+/**
+ * Checks an extraction against the PDF's own text. Returns { warnings, corrections }:
+ *  - a GSTIN that is not in the text is replaced by the one valid GSTIN in the text that is 1-2
+ *    characters away from it (a misread letter/digit), otherwise only warned about;
+ *  - the invoice number, grand total and tax amounts that are not in the text are warned about.
+ * It never changes amounts: those it only flags.
+ */
+export function verifyAgainstSource(extracted, sourceText, { gstinOnly = false } = {}) {
+  const warnings = [];
+  const corrections = [];
+  if (!sourceText || sourceText.trim().length < 50) return { warnings, corrections };
+
+  const textSquashed = squash(sourceText);
+  const nums = numbersInText(sourceText);
+  const textGstins = gstinsInText(sourceText);
+
+  for (const [role, party] of [["Seller", extracted.seller], ["Buyer", extracted.buyer]]) {
+    const g = squash(party?.gstin);
+    if (!g || textSquashed.includes(g)) continue;
+    // OCR text of a scan/photo is noisy, so there it is only trusted to repair a GSTIN that already fails its check digit.
+    if (gstinOnly && isValidGstin(g)) continue;
+    const near = textGstins.filter((t) => editDistance(t, g) <= 2);
+    if (near.length === 1) {
+      corrections.push(`${role} GSTIN corrected from "${party.gstin}" to "${near[0]}" to match the PDF text.`);
+      party.gstin = near[0];
+    } else if (!gstinOnly) {
+      warnings.push(`${role} GSTIN "${party.gstin}" does not appear in the PDF text — it may have been misread.`);
+    }
+  }
+
+  if (gstinOnly) return { warnings, corrections };
+
+  const inv = squash(extracted.invoice_number);
+  if (inv && !textSquashed.includes(inv)) warnings.push(`Invoice number "${extracted.invoice_number}" does not appear in the PDF text — it may have been misread.`);
+
+  const amounts = { "Grand total": extracted.total_amount, CGST: extracted.cgst, SGST: extracted.sgst, IGST: extracted.igst, Discount: extracted.discount };
+  for (const [label, value] of Object.entries(amounts)) {
+    const v = Number(value);
+    if (!(v > 0)) continue;
+    const r = Math.round(v * 100) / 100;
+    // Rounded/derived figures can legitimately be printed to the rupee, so allow a ±0.5 neighbour.
+    const present = [...nums].some((n) => Math.abs(n - r) < 0.011) || (label === "Grand total" && [...nums].some((n) => Math.abs(n - r) <= 0.51));
+    if (!present) warnings.push(`${label} ₹${r} does not appear in the PDF text — it may have been misread or calculated instead of read.`);
+  }
+  return { warnings, corrections };
 }

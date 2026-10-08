@@ -12,6 +12,7 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import JSZip from 'jszip';
 import { applyReconciliation } from '@/utils/reconciliation';
+import { computeInvoiceAmounts, buildInvoiceItems } from '@/utils/invoiceImport';
 import { runPool } from '@/utils/concurrency';
 import {
   EXTRACTION_CONCURRENCY, MAX_FILES_PER_BATCH, describeExtractionError, throwIfAiFailure, withAutoRetry,
@@ -831,9 +832,11 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             const invoiceNumber = String(doc.fields.invoice_number || '').trim();
             const customerName = String(doc.fields.customer || doc.fields.business_name || 'General Customer').trim();
             const rawDate = doc.fields.invoice_date || doc.invoice_information?.invoice_date || '';
-            const date = normalizeInvoiceDate(rawDate) || new Date().toISOString().split('T')[0];
+            const date = normalizeInvoiceDate(rawDate);
 
             if (!invoiceNumber) throw new Error('Missing invoice number.');
+            // Never guess a date: a wrong one lands the invoice in the wrong GST period.
+            if (!date) throw new Error('Invoice date is missing or unreadable. Fix it in the review step and import again.');
 
             // Create customer if missing — carry over the extracted buyer's
             // state/GSTIN/address so downstream intra-/inter-state (CGST+SGST
@@ -852,35 +855,25 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
               customerMap[customerName.toLowerCase()] = customerId;
             }
 
-            const itemsSum = doc.products.reduce((s, p) => s + (Number(p.total) || (Number(p.quantity) * Number(p.rate)) || 0), 0);
-            const discount = Number(doc.totals?.discount) || 0;
-            const cgst = Number(doc.totals?.cgst) || 0;
-            const sgst = Number(doc.totals?.sgst) || 0;
-            const igst = Number(doc.totals?.igst) || 0;
-            // Prefer the invoice's own printed/extracted grand total when available —
-            // line-item totals may already include tax, so re-adding cgst/sgst/igst
-            // on top of them would double-count it.
-            const total = Number(doc.totals?.grand_total) || Math.max(0, itemsSum - discount);
+            const amounts = computeInvoiceAmounts({ products: doc.products, totals: doc.totals });
 
             const record = {
               invoice_number: invoiceNumber,
               customer_id: customerId,
               customer_name: customerName,
               invoice_date: date,
-              subtotal: itemsSum,
-              discount,
-              cgst,
-              sgst,
-              igst,
-              total,
+              subtotal: amounts.subtotal,
+              discount: amounts.discount,
+              cgst: amounts.cgst,
+              sgst: amounts.sgst,
+              igst: amounts.igst,
+              cess: amounts.cess,
+              round_off: amounts.round_off,
+              total: amounts.total,
+              balance_due: amounts.total,
               status: 'draft',
-              items: doc.products.map(p => ({
-                description: p.description || 'Imported Item',
-                quantity: Number(p.quantity) || 1,
-                rate: Number(p.rate) || itemsSum,
-                amount: p.total || itemsSum,
-                gst_rate: Number(p.gst_rate) || 0
-              })),
+              items: buildInvoiceItems(doc.products),
+              warnings: doc.warnings || [],
               ai_confidence: doc.confidence,
               ai_category: 'AI Imported'
             };
@@ -901,7 +894,8 @@ export default function BulkUploadDialog({ open, onClose, onDone }) {
             const vendorName = String(doc.fields.supplier || doc.fields.business_name || 'Generic Vendor').trim();
             const rawDate = doc.fields.invoice_date || doc.invoice_information?.invoice_date || '';
             const date = normalizeInvoiceDate(rawDate) || new Date().toISOString().split('T')[0];
-            const amount = doc.products.reduce((s, p) => s + (Number(p.total) || 0), 0) || Number(doc.fields.total) || 0;
+            // The printed grand total already includes GST; summing line values would drop the tax.
+            const amount = computeInvoiceAmounts({ products: doc.products, totals: doc.totals }).total;
             const title = docType === "Purchase Invoice"
               ? `Purchase Invoice: ${doc.fields.invoice_number || 'N/A'}`
               : `${docType}: ${vendorName}`;

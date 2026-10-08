@@ -6,7 +6,8 @@ import sharp from "sharp";
 import { createCanvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { aiProvider, incrementDeduplicatedHits } from "./aiProvider.js";
-import { reconcileInvoice } from "./invoiceMath.js";
+import { reconcileInvoice, isValidGstin, verifyAgainstSource } from "./invoiceMath.js";
+import { extractPdfLayoutText } from "./pdfLayout.js";
 import { createLimiter, envInt } from "../utils/limiter.js";
 
 const require = createRequire(import.meta.url);
@@ -35,6 +36,11 @@ export const ERROR_CODES = {
 // Every Tesseract.recognize() call spins up its own WASM worker (~60 MB each), so a
 // bulk upload with parallel files would multiply that. Cap how many run at once.
 const ocrLimiter = createLimiter(() => envInt("OCR_MAX_CONCURRENCY", 2));
+
+// Longest edge, in px, an uploaded photo is scaled down to. Invoice tables carry small print, and
+// at 900px digits like 3/8 or 1/7 blur together, which silently corrupts quantities and amounts.
+// Gemini tiles images itself, so 2000px costs little extra. Override with EXTRACTION_IMAGE_MAX_EDGE.
+const IMAGE_MAX_EDGE = envInt("EXTRACTION_IMAGE_MAX_EDGE", 2000);
 
 // Helper: Perform Local OCR using Tesseract.js if needed
 const runLocalOcr = async (buffer) => {
@@ -267,6 +273,10 @@ export const normalizeInvoiceDate = (value) => {
     day = parseInt(yyyymmdd[3], 10);
   } else {
     // 2. Check DD/MM/YYYY / DD-MM-YYYY / DD.MM.YYYY
+    // Handwritten bill books often drop a digit of the year ("15/07/026" for 2026); a 3-digit year with
+    // a leading 0 can only mean 20xx.
+    const threeDigitYear = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.]0(\d{2})$/.exec(str);
+    if (threeDigitYear) str = `${threeDigitYear[1]}/${threeDigitYear[2]}/20${threeDigitYear[3]}`;
     const ddmmyyyy = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/.exec(str);
     if (ddmmyyyy) {
       day = parseInt(ddmmyyyy[1], 10);
@@ -381,8 +391,8 @@ export const parseGstFromText = (text, fileName = '') => {
 
     if (csvInvNo || csvCust || csvSupp || csvTotal > 0 || csvItems.length > 0) {
       return {
-        invoice_number: csvInvNo || "INV-001",
-        invoice_date: csvDate || new Date().toISOString().split('T')[0],
+        invoice_number: csvInvNo || null,
+        invoice_date: csvDate || null,
         seller: { name: csvSupp || null, gstin: null, address: null, state: null },
         buyer: { name: csvCust || null, gstin: null, address: null, state: null },
         place_of_supply: null,
@@ -469,16 +479,16 @@ export const parseGstFromText = (text, fileName = '') => {
       const total = parseFloat(rowMatch[5].replace(/,/g, '')) || (qty * rate);
       items.push({
         description: desc,
-        hsn: "3926",
+        hsn: null,
         quantity: qty,
         unit: 'pcs',
         rate: rate,
         discount: 0,
         taxable_value: total,
-        gst_rate: 18,
+        gst_rate: null,
         cgst: null,
         sgst: null,
-        igst: Math.round(total * 0.18 * 100) / 100,
+        igst: null,
         cess: null,
         total: total
       });
@@ -497,7 +507,7 @@ export const parseGstFromText = (text, fileName = '') => {
 
   return {
     invoice_number: invoice_number || null,
-    invoice_date: invoice_date || new Date().toISOString().split('T')[0],
+    invoice_date: invoice_date || null,
     seller: {
       name: seller_name || null,
       gstin: sellerGstin || null,
@@ -533,7 +543,7 @@ export const parseGstFromText = (text, fileName = '') => {
     cess: null,
     round_off: null,
     total_amount: finalGrandTotal,
-    extraction_confidence: 0.95,
+    extraction_confidence: 0.5,
     missing_fields: [],
     warnings: []
   };
@@ -587,8 +597,8 @@ export const processDocumentPipeline = async (buffer, fileName, mimeType, inputJ
     try {
       buffer = await sharp(buffer)
         .rotate()
-        .resize(900, 900, { fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 80 })
+        .resize(IMAGE_MAX_EDGE, IMAGE_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 88 })
         .toBuffer();
       // The bytes are JPEG now, whatever the upload was (PNG, WebP, ...): label them honestly.
       mimeType = "image/jpeg";
@@ -633,6 +643,16 @@ export const processDocumentPipeline = async (buffer, fileName, mimeType, inputJ
       }
     } catch (pdfErr) {
       console.warn(`[PIPELINE-WARN] Native PDF extraction warning for ${fileName}:`, pdfErr.message);
+    }
+
+    // Position-aware text keeps each table row's cells together, which pdf-parse's flattened text does not.
+    const layout = await extractPdfLayoutText(buffer);
+    if (layout.text.trim().length >= 50) {
+      extractedText = layout.text;
+      diagnostic.pdf_pages = layout.pages || diagnostic.pdf_pages;
+      diagnostic.native_text_extraction.text_length = extractedText.length;
+      diagnostic.native_text_extraction.layout_aware = true;
+      console.log(`[PIPELINE-STEP 2] Layout-aware PDF text: ${extractedText.length} chars over ${layout.pages} page(s).`);
     }
 
     // Quality check on native PDF text
@@ -683,6 +703,18 @@ export const processDocumentPipeline = async (buffer, fileName, mimeType, inputJ
     }
   }
 
+  // STAGE 3c: Scanned PDF (no text layer). Without this the PDF had no text fallback at all, only the AI.
+  if (isPdfFile && !diagnostic.native_text_extraction.success && pdfVisionBuffer) {
+    diagnostic.ocr.attempted = true;
+    console.log(`[PIPELINE-STEP 3c] '${fileName}' has no text layer; running OCR on the rendered page...`);
+    const ocrText = await runLocalOcr(pdfVisionBuffer);
+    if (ocrText && ocrText.trim().length > 0) {
+      extractedText = ocrText;
+      diagnostic.ocr.success = true;
+      diagnostic.ocr.text_length = ocrText.length;
+    }
+  }
+
   // STAGE 4: AI Structured Extraction
   let extractedJson = null;
   let aiErrorObj = null;
@@ -700,12 +732,17 @@ CRITICAL RULES:
 4. Return ONLY a valid JSON object — no markdown, no code fences, no explanation.
 5. Line-item quantity may appear as a compound notation such as "4:0" or "4+0" (billed:free units, common on medical/pharmacy invoices) or "10+1" (10 billed + 1 free). In these cases, extract the FIRST number (the billed quantity) as "quantity" — do not default to 1 just because the format is unfamiliar.
 6. If the invoice has a Discount line (a deduction applied after Subtotal and before tax/Grand Total), extract its amount as "discount". This is a document-level discount, separate from any per-item discount.
-7. You do not reliably know today's real date. NEVER add a "warnings" entry judging whether "invoice_date" or "due_date" is in the future, in the past, or otherwise implausible relative to any assumed current date. Just extract the date exactly as printed.
+7. If the document prints a separate "Due Date" / "Payment Due" date, extract it as "due_date" exactly as printed; otherwise null. If HSN/SAC is printed once for the whole document (not per row), copy it into every item's "hsn".
+8. "buyer" is the party the goods were sold to: the "Bill To" / "Billed to" / "Customer" / "Patient Name" party. On pharmacy bills it is the Patient, NEVER the "Dr Name" / doctor.
+9. Take cgst, sgst, igst, cess, discount and round_off from the amounts PRINTED on the document (the totals block or a GST summary line such as "GST 2163.31*2.5%=54.08 SGST + 54.08 CGST"). Never calculate them yourself. If a tax amount is not printed, return null.
+10. Handwritten dates: copy the digits you can see; do not "fix" the year.
+11. You do not reliably know today's real date. NEVER add a "warnings" entry judging whether "invoice_date" or "due_date" is in the future, in the past, or otherwise implausible relative to any assumed current date. Just extract the date exactly as printed.
 
 Required JSON schema:
 {
   "invoice_number": string | null,
   "invoice_date": string | null,
+  "due_date": string | null,
   "seller": { "name": string | null, "gstin": string | null, "address": string | null, "state": string | null },
   "buyer": { "name": string | null, "gstin": string | null, "address": string | null, "state": string | null },
   "place_of_supply": string | null,
@@ -831,7 +868,7 @@ function runWithVisionLock(fn) {
         console.log(`[PIPELINE-STEP 4b] Local OCR text for '${fileName}' looks unreliable (likely a sideways/rotated photo) — sending image to Gemini without it.`);
       }
       const prompt = usableOcrText
-        ? `${groqVisionSchema}\n\nExtracted Document Text Context:\n${usableOcrText.substring(0, 4000)}`
+        ? `${groqVisionSchema}\n\nExtracted Document Text Context:\n${usableOcrText.substring(0, 8000)}`
         : groqVisionSchema;
       console.log(`[PIPELINE-STEP 4b] Initiating Gemini AI extraction for '${fileName}'...`);
       extractedJson = await aiProvider.extractStructuredData({ prompt, buffer, mimeType, fileName });
@@ -973,6 +1010,18 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
       : "This document was read with basic text matching only (no AI), so please review it carefully.");
   }
 
+  // A digital PDF's own text is the ground truth: check what the model returned against it, and
+  // snap a misread GSTIN to the one in the text. (OCR text of a photo is not reliable enough for this.)
+  if (isPdfFile && diagnostic.native_text_extraction.success) {
+    const grounded = verifyAgainstSource(extractedJson, extractedText);
+    grounded.corrections.forEach(c => warnings.push(c));
+    grounded.warnings.forEach(w => warnings.push(w));
+    diagnostic.validation.grounded_in_pdf_text = true;
+  } else if (extractedText && diagnostic.ocr.success) {
+    // Scan or photo: only let the OCR text repair a GSTIN that fails its check digit.
+    verifyAgainstSource(extractedJson, extractedText, { gstinOnly: true }).corrections.forEach(c => warnings.push(c));
+  }
+
   if (diagnostic.ai_extraction.fallback_used) {
     warnings.push(`Read by the backup model "${diagnostic.ai_extraction.provider_model}" because the main model was unavailable. Please review this document carefully.`);
   }
@@ -1018,8 +1067,28 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
       }
     }
 
+    // When quantity x rate, tax and discounts reproduce the printed grand total, a per-line mismatch is
+    // just a column the bill prints differently (e.g. a net amount after a line discount, as on pharmacy
+    // bills), not a misread. Only keep line warnings when the document as a whole does not add up.
+    if (reconciliation.mode === "exclusive" || reconciliation.mode === "inclusive") {
+      items.forEach(it => {
+        if (it.warning) {
+          const at = warnings.indexOf(it.warning);
+          if (at !== -1) warnings.splice(at, 1);
+          it.warning = null;
+        }
+      });
+    }
+
     if (reconciliation.mode === "unresolved") totalDiscrepancyPct = reconciliation.discrepancy_pct;
     reconciliation.warnings.forEach(w => { if (!warnings.includes(w)) warnings.push(w); });
+  }
+
+  // A GSTIN that fails its checksum almost always means a misread character.
+  for (const [role, party] of [["Seller", extractedJson.seller], ["Buyer", extractedJson.buyer]]) {
+    if (party?.gstin && !isValidGstin(party.gstin)) {
+      warnings.push(`${role} GSTIN "${party.gstin}" is not a valid GSTIN (format or check digit fails) — a character may have been misread.`);
+    }
   }
 
   // STAGE 7: Field-Level Validation Status Assignment & Dynamic Quality Confidence
@@ -1057,7 +1126,7 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
       warning: !extractedJson.buyer?.name ? "Customer name missing" : null
     },
     gstin: {
-      status: "SUCCESS",
+      status: [extractedJson.seller?.gstin, extractedJson.buyer?.gstin].some((g) => g && !isValidGstin(g)) ? "NEEDS_REVIEW" : "SUCCESS",
       value: extractedJson.seller?.gstin || extractedJson.buyer?.gstin || null,
       raw: extractedJson.seller?.gstin || extractedJson.buyer?.gstin || null,
       warning: null
@@ -1120,6 +1189,11 @@ Note: line-item quantity may appear as "4:0" or "4+0" (billed:free) — extract 
     penalty += totalDiscrepancyPct > 0 ? Math.min(0.40, Math.max(0.10, totalDiscrepancyPct)) : 0.10;
   }
   if (fieldValidation.invoice_date.status !== "SUCCESS") penalty += 0.05;
+  // A backup (lite) model read it, or a GSTIN failed its checksum: both mean a human should look.
+  if (diagnostic.ai_extraction.fallback_used) penalty += 0.10;
+  if (fieldValidation.gstin.status !== "SUCCESS") penalty += 0.10;
+  const ungrounded = warnings.filter(w => /does not appear in the PDF text/.test(w)).length;
+  if (ungrounded > 0) penalty += Math.min(0.30, 0.10 * ungrounded);
   // A misread quantity/rate on one line item is exactly the kind of error that can
   // silently slip through with a self-consistent (and otherwise high) score — dock
   // confidence explicitly per flagged item, not just via the line_items status flip.
